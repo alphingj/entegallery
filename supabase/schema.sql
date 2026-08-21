@@ -1,0 +1,86 @@
+-- ============================================================
+-- Ente Gallery — Supabase schema
+-- Run this in the Supabase dashboard: SQL Editor → New query
+-- ============================================================
+
+create extension if not exists vector;
+create extension if not exists pg_trgm;
+
+-- ---------- photos ----------
+create table if not exists photos (
+  id                   uuid primary key default gen_random_uuid(),
+  google_drive_file_id text unique not null,
+  file_name            text,
+  mime_type            text,
+  width                integer,
+  height               integer,
+  byte_size            bigint,
+  thumbnail_url        text,
+  created_at           timestamptz not null default now()
+);
+
+create index if not exists idx_photos_created on photos (created_at desc);
+
+-- ---------- people ----------
+create table if not exists people (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null default 'Unknown',
+  descriptor vector(128) not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_people_name_trgm on people using gin (name gin_trgm_ops);
+
+-- ---------- photo_faces ----------
+-- One row per detected face, so a single image can contain many people and
+-- each person's crop can be recovered from bounding_box.
+create table if not exists photo_faces (
+  id           uuid primary key default gen_random_uuid(),
+  photo_id     uuid not null references photos(id) on delete cascade,
+  person_id    uuid not null references people(id) on delete cascade,
+  bounding_box jsonb not null,          -- { x, y, width, height } normalized 0..1, squarified
+  descriptor   vector(128) not null,
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists idx_faces_photo  on photo_faces (photo_id);
+create index if not exists idx_faces_person on photo_faces (person_id);
+create index if not exists idx_faces_descriptor on photo_faces using ivfflat (descriptor vector_cosine_ops) with (lists = 100);
+
+-- ---------- matching ----------
+-- Compare a new descriptor against EVERY stored face of each person.
+-- Returns the closest person below max_dist (cosine distance), else no rows.
+create or replace function match_person(
+  q vector(128),
+  max_dist float default 0.4
+)
+returns table (person_id uuid, name text, distance float)
+language sql stable as $$
+  select f.person_id, p.name, min(f.descriptor <=> q)::float as distance
+  from photo_faces f
+  join people p on p.id = f.person_id
+  group by f.person_id, p.name
+  having min(f.descriptor <=> q) < max_dist
+  order by distance asc
+  limit 1;
+$$;
+
+-- Photos containing a person, newest first.
+create or replace function photos_of_person(pid uuid)
+returns setof photos
+language sql stable as $$
+  select distinct ph.* from photos ph
+  join photo_faces f on f.photo_id = ph.id
+  where f.person_id = pid
+  order by ph.created_at desc;
+$$;
+
+-- Fuzzy person search by name (typo-tolerant via pg_trgm).
+create or replace function search_people(query text, result_limit int default 20)
+returns setof people
+language sql stable as $$
+  select * from people
+  where name % query or name ilike '%' || query || '%'
+  order by greatest(similarity(name, query), 0) desc, created_at asc
+  limit result_limit;
+$$;
