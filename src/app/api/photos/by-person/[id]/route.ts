@@ -13,6 +13,8 @@ interface FaceJoinRow {
     google_drive_file_id: string;
     file_name: string | null;
     thumbnail_url: string | null;
+    width: number | null;
+    height: number | null;
     created_at: string;
   };
 }
@@ -51,6 +53,8 @@ export async function GET(
           fileName: r.photos.file_name,
           thumbnailUrl: r.photos.thumbnail_url,
           box: r.bounding_box,
+          width: r.photos.width,
+          height: r.photos.height,
           createdAt: r.created_at,
         };
       }) ?? [];

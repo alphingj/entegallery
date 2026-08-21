@@ -9,10 +9,13 @@ interface FaceJoinRow {
   bounding_box: BoundingBox;
   created_at: string;
   person_id: string;
+  photo_id: string;
   photos: {
     google_drive_file_id: string;
     thumbnail_url: string | null;
     file_name: string | null;
+    width: number | null;
+    height: number | null;
   };
 }
 
@@ -72,7 +75,7 @@ async function summarize(
   // fetch all faces with embedded photo thumbnails and aggregate in JS.
   const { data, error } = await sb
     .from("photo_faces")
-    .select("id, bounding_box, created_at, person_id, photos(google_drive_file_id, thumbnail_url, file_name)")
+    .select("id, bounding_box, created_at, person_id, photos(google_drive_file_id, thumbnail_url, file_name, width, height)")
     .in("person_id", ids)
     .order("created_at", { ascending: false })
     .limit(5000);
@@ -91,6 +94,8 @@ async function summarize(
         fileName: r.photos.file_name,
         thumbnailUrl: r.photos.thumbnail_url,
         box: r.bounding_box,
+        width: r.photos.width,
+        height: r.photos.height,
         createdAt: r.created_at,
       };
     }

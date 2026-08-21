@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "token": "tsx scripts/get-google-token.ts",
+    "models": "bash scripts/download-models.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

@@ -33,6 +33,9 @@ export interface FaceItem {
   fileName: string | null;
   thumbnailUrl: string | null;
   box: BoundingBox;
+  /** natural image dimensions, needed for aspect-correct CSS crops */
+  width: number | null;
+  height: number | null;
   createdAt: string;
 }
 
