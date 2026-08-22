@@ -219,3 +219,10 @@ export const findDuplicatesPage = (pageToken?: string) =>
 
 export const deletePhoto = (photoId: string) =>
   jsonFetch<{ ok: boolean }>(`/api/photos/${photoId}`, { method: "DELETE" });
+
+export const mergePeople = (body: { sourceIds: string[]; targetId?: string; targetName?: string }) =>
+  jsonFetch<{ ok: boolean; keeperId: string; keeperName: string; movedFaces: number; mergedPersons: number }>(`/api/people/merge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });

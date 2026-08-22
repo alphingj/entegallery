@@ -11,7 +11,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
-import { fetchPeople, fetchPersonFaces, moveFace, renamePerson, type FaceItem } from "@/lib/api-client";
+import { fetchPeople, fetchPersonFaces, mergePeople, moveFace, renamePerson, type FaceItem } from "@/lib/api-client";
 import { FaceCrop } from "@/components/face-crop";
 import { Lightbox, type LightboxPhoto } from "@/components/lightbox";
 import { Nav } from "@/components/nav";
@@ -155,6 +155,8 @@ export function PersonView({ personId }: { personId: string }) {
   const queryClient = useQueryClient();
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [renameMode, setRenameMode] = useState<"new" | "existing">("new");
+  const [renameTargetId, setRenameTargetId] = useState("");
   const [moveTarget, setMoveTarget] = useState<FaceItem | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [highlightedFaces, setHighlightedFaces] = useState<Set<string>>(new Set());
@@ -171,12 +173,22 @@ export function PersonView({ personId }: { personId: string }) {
   });
 
   const renameMutation = useMutation({
-    mutationFn: () => renamePerson(personId, nameDraft),
-    onSuccess: async () => {
+    mutationFn: () => {
+      if (renameMode === "existing") {
+        if (!renameTargetId) throw new Error("Pick a person");
+        return mergePeople({ sourceIds: [personId], targetId: renameTargetId });
+      }
+      return renamePerson(personId, nameDraft);
+    },
+    onSuccess: async (res: { keeperName?: string; person?: { name: string } }) => {
       await queryClient.invalidateQueries({ queryKey: ["people"] });
       await queryClient.invalidateQueries({ queryKey: ["person-faces"] });
       setRenaming(false);
-      toast.success(`Renamed to “${nameDraft.trim()}”`);
+      if (renameMode === "existing") {
+        toast.success(`Merged into ${(res as { keeperName?: string })?.keeperName ?? "person"}`);
+      } else {
+        toast.success(`Renamed to “${nameDraft.trim()}”`);
+      }
     },
     onError: (err) =>
       toast.error(err instanceof Error ? err.message : "Rename failed"),
@@ -298,34 +310,79 @@ export function PersonView({ personId }: { personId: string }) {
         )}
       </main>
 
-      {/* rename dialog */}
+      {/* rename/merge dialog */}
       <Dialog open={renaming} onOpenChange={setRenaming}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rename person</DialogTitle>
+            <DialogTitle>{renameMode === "existing" ? "Merge into existing person" : "Rename person"}</DialogTitle>
             <DialogDescription>
-              Renaming updates this face everywhere it appears — past and future uploads.
+              {renameMode === "existing"
+                ? "Merge this person's faces into an existing person."
+                : "Renaming updates this face everywhere it appears — past and future uploads."}
             </DialogDescription>
           </DialogHeader>
-          <Input
-            value={nameDraft}
-            autoFocus
-            placeholder="Name"
-            onChange={(e) => setNameDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && nameDraft.trim())
-                renameMutation.mutate();
-            }}
-          />
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={renameMode === "new" ? "secondary" : "ghost"}
+              onClick={() => setRenameMode("new")}
+            >
+              New name
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={renameMode === "existing" ? "secondary" : "ghost"}
+              disabled={!peopleData || peopleData.people.filter((p) => p.id !== personId).length === 0}
+              onClick={() => setRenameMode("existing")}
+            >
+              Add to existing person
+            </Button>
+          </div>
+          {renameMode === "new" ? (
+            <div className="space-y-2">
+              <Input
+                value={nameDraft}
+                autoFocus
+                placeholder="Name"
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && nameDraft.trim())
+                    renameMutation.mutate();
+                }}
+              />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>Existing person</Label>
+              <Select value={renameTargetId} onValueChange={setRenameTargetId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Choose person…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {peopleData?.people
+                    .filter((p) => p.id !== personId)
+                    .map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} · {p.photoCount} photos
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRenaming(false)}>
               Cancel
             </Button>
             <Button
-              disabled={!nameDraft.trim() || renameMutation.isPending}
+              disabled={
+                renameMode === "new" ? !nameDraft.trim() : !renameTargetId || renameMutation.isPending
+              }
               onClick={() => renameMutation.mutate()}
             >
-              <Check className="size-4" /> Save
+              <Check className="size-4" /> {renameMode === "new" ? "Save" : "Merge"}
             </Button>
           </DialogFooter>
         </DialogContent>
