@@ -65,7 +65,7 @@ export default function VerifyPage() {
     await fetch("/api/verification/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ faceNameLimit: 20 }),
+      body: JSON.stringify({ faceNameLimit: 20, samePersonLimit: 20 }),
     });
     await load();
   };
