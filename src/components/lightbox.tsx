@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -83,13 +83,36 @@ export function Lightbox({
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm">
       {/* top bar */}
-      <div className="flex items-center justify-between px-4 py-3 text-white">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 text-white">
         <span className="truncate text-sm text-white/70">
           {photo.file_name} · {index + 1}/{photos.length}
         </span>
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
-          <X className="size-5" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-white hover:bg-white/10 hover:text-white"
+            onClick={async () => {
+              const url = photo.isHeic
+                ? `https://drive.google.com/thumbnail?id=${photo.google_drive_file_id}&sz=w2048`
+                : `/api/image/${photo.google_drive_file_id}`;
+              const res = await fetch(url);
+              const blob = await res.blob();
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = photo.file_name || `photo-${photo.id}.jpg`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+            }}
+          >
+            <Download className="mr-1.5 size-4" /> Download
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+            <X className="size-5" />
+          </Button>
+        </div>
       </div>
 
       {/* stage */}

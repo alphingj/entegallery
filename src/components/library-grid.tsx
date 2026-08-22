@@ -2,14 +2,28 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
+import { Download, X } from "lucide-react";
 import { fetchPhotos } from "@/lib/api-client";
 import { Lightbox } from "@/components/lightbox";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
+
+function isHeicItem(p: { mime_type: string | null; file_name: string | null }) {
+  return (
+    p.mime_type === "image/heic" ||
+    p.mime_type === "image/heif" ||
+    /\.(heic|heif)$/i.test(p.file_name ?? "")
+  );
+}
 
 /**
  * Shared infinite-scroll photo grid used by both the Photos and HEIC tabs.
- * HEIC items render via Google's server-converted thumbnails; their full-res
- * view also uses the CDN since browsers can't decode HEIC natively.
+ * - HEIC thumbnails via Google CDN; full-res via CDN for heic.
+ * - Always-visible checkboxes for bulk selection.
+ * - Bulk download as single ZIP (honors HEIC converted JPEG).
  */
 export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
   const {
@@ -27,6 +41,8 @@ export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
 
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [zipping, setZipping] = useState(false);
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -45,8 +61,73 @@ export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
 
   const photos = data?.pages.flatMap((p) => p.photos) ?? [];
 
+  const prevHeicRef = useRef(heic);
+  useEffect(() => {
+    if (prevHeicRef.current === heic) return;
+    prevHeicRef.current = heic;
+    setSelected(new Set());
+  }, [heic]);
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function downloadZip() {
+    if (selected.size === 0) return;
+    setZipping(true);
+    try {
+      const zip = new JSZip();
+      const chosen = photos.filter((p) => selected.has(p.id));
+      for (const p of chosen) {
+        const url = isHeicItem(p)
+          ? `https://drive.google.com/thumbnail?id=${p.google_drive_file_id}&sz=w2048`
+          : `/api/image/${p.google_drive_file_id}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to fetch ${p.file_name}`);
+        const blob = await res.blob();
+        // Save HEIC as .jpg since CDN returns converted JPEG
+        let name = p.file_name || `${p.id}.jpg`;
+        if (isHeicItem(p) && /\.(heic|heif)$/i.test(name)) {
+          name = name.replace(/\.(heic|heif)$/i, ".jpg");
+        }
+        zip.file(name, blob);
+      }
+      const out = await zip.generateAsync({ type: "blob" });
+      const stamp = new Date().toISOString().slice(0, 10);
+      saveAs(out, `ente-gallery-${heic === "only" ? "heic-" : ""}${stamp}.zip`);
+      toast.success(`Downloaded ${chosen.length} photo${chosen.length === 1 ? "" : "s"} as ZIP`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "ZIP download failed");
+    } finally {
+      setZipping(false);
+    }
+  }
+
   return (
     <>
+      {/* Bulk bar */}
+      {selected.size > 0 && (
+        <div className="sticky top-[57px] z-20 mb-3 flex items-center justify-between rounded-lg border bg-card px-3 py-2 shadow-sm">
+          <span className="text-sm font-medium">
+            {selected.size} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={downloadZip} disabled={zipping}>
+              <Download className="mr-1.5 size-4" />
+              {zipping ? "Zipping…" : `Download ZIP`}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              <X className="size-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {Array.from({ length: 18 }).map((_, i) => (
@@ -66,26 +147,41 @@ export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {photos.map((photo, i) => (
-            <button
-              key={photo.id}
-              onClick={() => setLightboxIndex(i)}
-              className="group relative overflow-hidden rounded-md bg-muted focus-visible:outline-2 focus-visible:outline-primary"
-              style={{ aspectRatio: "1 / 1" }}
-              aria-label={`Open ${photo.file_name ?? "photo"}`}
-            >
-              {photo.thumbnail_url && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={photo.thumbnail_url}
-                  alt={photo.file_name ?? ""}
-                  loading="lazy"
-                  draggable={false}
-                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+          {photos.map((photo, i) => {
+            const checked = selected.has(photo.id);
+            return (
+              <div
+                key={photo.id}
+                className="group relative overflow-hidden rounded-md bg-muted focus-within:outline-2 focus-within:outline-primary"
+                style={{ aspectRatio: "1 / 1" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(photo.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={`Select ${photo.file_name ?? "photo"}`}
+                  className="absolute left-2 top-2 z-10 size-5 cursor-pointer rounded border bg-white/90 accent-primary shadow"
                 />
-              )}
-            </button>
-          ))}
+                <button
+                  onClick={() => setLightboxIndex(i)}
+                  className="absolute inset-0 focus-visible:outline-none"
+                  aria-label={`Open ${photo.file_name ?? "photo"}`}
+                >
+                  {photo.thumbnail_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={photo.thumbnail_url}
+                      alt={photo.file_name ?? ""}
+                      loading="lazy"
+                      draggable={false}
+                      className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                    />
+                  )}
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
       <div ref={sentinelRef} />
@@ -97,10 +193,7 @@ export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
         <Lightbox
           photos={photos.map((p) => ({
             ...p,
-            isHeic:
-              p.mime_type === "image/heic" ||
-              p.mime_type === "image/heif" ||
-              /\.(heic|heif)$/i.test(p.file_name ?? ""),
+            isHeic: isHeicItem(p),
           }))}
           index={lightboxIndex}
           onIndexChange={setLightboxIndex}

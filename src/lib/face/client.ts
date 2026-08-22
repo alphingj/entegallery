@@ -11,6 +11,18 @@ export function loadFaceApi(): Promise<FaceApi> {
   if (!loaderPromise) {
     loaderPromise = (async () => {
       const faceapi = await import("@vladmandic/face-api");
+      // Prefer GPU — falls back automatically if unavailable.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const tf = (faceapi as unknown as { tf: any }).tf;
+        if (tf?.setBackend) {
+          await tf.setBackend("webgl");
+          await tf.ready();
+          console.log(`[face] backend: ${tf.getBackend()}`);
+        }
+      } catch {
+        /* keep default backend */
+      }
       const base = "/models";
       await Promise.all([
         faceapi.nets.ssdMobilenetv1.loadFromUri(base),

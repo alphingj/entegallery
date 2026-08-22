@@ -82,7 +82,13 @@ export async function matchAndLinkFaces(
     let name: string;
     let matched = false;
 
-    if (best && (second === undefined || second.distance - best.distance >= margin)) {
+    const AUTO_MATCH_FLOOR = 0.14; // below this, best is trusted regardless of margin
+    if (
+      best &&
+      (best.distance < AUTO_MATCH_FLOOR ||
+        second === undefined ||
+        second.distance - best.distance >= margin)
+    ) {
       personId = best.person_id;
       name = best.name;
       matched = true;

@@ -316,10 +316,44 @@ export function LibraryDialog() {
 
         {duplicateGroups.length > 0 && (
           <div className="-mx-2 space-y-4 overflow-y-auto px-2" style={{ maxHeight: 320 }}>
-            <p className="text-sm font-medium">
-              {duplicateGroups.length} duplicate group
-              {duplicateGroups.length === 1 ? "" : "s"} — pick copies to trash
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium">
+                {duplicateGroups.length} duplicate group
+                {duplicateGroups.length === 1 ? "" : "s"} — pick copies to trash
+              </p>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={busy}
+                onClick={async () => {
+                  if (
+                    !confirm(
+                      `Trash all duplicates? Keeps 1 copy per group, moves ${duplicateGroups.reduce(
+                        (a, g) => a + g.items.length - 1,
+                        0
+                      )} files to Drive trash (recoverable 30 days).`
+                    )
+                  )
+                    return;
+                  setError(null);
+                  try {
+                    for (const g of duplicateGroups) {
+                      for (const item of g.items.slice(1)) {
+                        await deletePhoto(item.id);
+                      }
+                    }
+                    const kept = duplicateGroups.length;
+                    toast.success(`Trashed duplicates, kept ${kept} original${kept === 1 ? "" : "s"}`);
+                    setDuplicateGroups([]);
+                    await refreshQueries();
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Bulk delete failed");
+                  }
+                }}
+              >
+                <Trash2 className="mr-1.5 size-4" /> Delete all duplicates
+              </Button>
+            </div>
             {duplicateGroups.map((group) => (
               <div key={group.md5} className="rounded-lg border p-3">
                 <p className="mb-2 truncate text-xs text-muted-foreground">

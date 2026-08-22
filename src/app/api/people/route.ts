@@ -71,15 +71,26 @@ async function summarize(
 ): Promise<PersonSummary[]> {
   if (ids.length === 0) return [];
 
-  // One face per person would suffice for the card, but we need counts too —
-  // fetch all faces with embedded photo thumbnails and aggregate in JS.
-  const { data, error } = await sb
-    .from("photo_faces")
-    .select("id, bounding_box, created_at, person_id, photos(google_drive_file_id, thumbnail_url, file_name, width, height)")
-    .in("person_id", ids)
-    .order("created_at", { ascending: false })
-    .limit(5000);
-  if (error) throw new Error(error.message);
+  // Batch ids to avoid PostgREST URL Too Long (>8kB) when thousands of Unknowns exist.
+  const CHUNK = 80;
+  const allRows: FaceJoinRow[] = [];
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    const { data, error } = await sb
+      .from("photo_faces")
+      .select(
+        "id, bounding_box, created_at, person_id, photos(google_drive_file_id, thumbnail_url, file_name, width, height)"
+      )
+      .in("person_id", chunk)
+      .order("created_at", { ascending: false })
+      .limit(5000);
+    if (error) {
+      console.error("people summarize chunk failed:", error.message, error.details, error.hint);
+      throw new Error(error.message);
+    }
+    allRows.push(...((data ?? []) as unknown as FaceJoinRow[]));
+  }
+  const data = allRows;
 
   const byPerson = new Map<string, { count: number; latest: FaceItem | null }>();
   for (const row of data ?? []) {
