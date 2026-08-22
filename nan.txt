@@ -1,0 +1,4 @@
+
+GOOGLE_CLIENT_ID=601629816683-rkt8km8h2fn4otu56dr1fhesil1u1bhn.apps.googleusercontent.com \
+GOOGLE_CLIENT_SECRET=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 \
+pnpm run token

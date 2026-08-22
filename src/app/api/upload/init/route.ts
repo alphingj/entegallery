@@ -36,6 +36,8 @@ export async function POST(req: NextRequest) {
       fileName,
       mimeType,
       byteSize,
+      // Forward the browser origin so Google returns CORS headers on the PUT.
+      origin: req.headers.get("origin") ?? undefined,
     });
     return NextResponse.json({ uploadUri });
   } catch (err) {

@@ -73,11 +73,16 @@ export function driveThumbnailUrl(fileId: string, size = "w2048"): string {
  * Step 1 of the upload pipeline: ask Drive for a resumable upload session URI.
  * The browser then PUTs the file bytes directly to that URI — no file content
  * ever passes through Vercel serverless functions.
+ *
+ * `origin` MUST be the browser's Origin: Google only attaches CORS headers to
+ * the session's PUT responses when the session request itself carried an
+ * Origin, otherwise browsers block reading the response.
  */
 export async function createResumableSession(opts: {
   fileName: string;
   mimeType: string;
   byteSize: number;
+  origin?: string;
 }): Promise<string> {
   const token = await getAccessToken();
   const res = await fetch(
@@ -89,6 +94,7 @@ export async function createResumableSession(opts: {
         "Content-Type": "application/json; charset=UTF-8",
         "X-Upload-Content-Type": opts.mimeType,
         "X-Upload-Content-Length": String(opts.byteSize),
+        ...(opts.origin ? { Origin: opts.origin } : {}),
       },
       body: JSON.stringify({
         name: opts.fileName,

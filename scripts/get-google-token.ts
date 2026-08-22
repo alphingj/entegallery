@@ -10,7 +10,19 @@
  */
 
 import http from "http";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 import { URL } from "url";
+
+// The script runs outside Next.js, which normally loads env files — do it manually.
+try {
+  for (const line of readFileSync(resolve(process.cwd(), ".env.local"), "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (m && !(m[1] in process.env) && m[2] !== "") process.env[m[1]] = m[2];
+  }
+} catch {
+  // no .env.local — user can still inline vars
+}
 
 const PORT = 51337;
 const REDIRECT_URI = `http://localhost:${PORT}`;

@@ -54,7 +54,6 @@ export function putFileToDrive(
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", uploadUri);
     xhr.setRequestHeader("Content-Type", file.type);
-    if (file.size > 0) xhr.setRequestHeader("Content-Length", String(file.size));
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded);
     xhr.onload = () => {
       if (xhr.status === 200 || xhr.status === 201) {
@@ -67,7 +66,12 @@ export function putFileToDrive(
         reject(new Error(`Drive upload failed (${xhr.status}).`));
       }
     };
-    xhr.onerror = () => reject(new Error("Network error during Drive upload."));
+    xhr.onerror = () =>
+      reject(
+        new Error(
+          "Upload blocked before reaching Drive (CORS or network). Check the browser console for details."
+        )
+      );
     xhr.send(file);
   });
 }
