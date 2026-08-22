@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
@@ -37,6 +38,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-background text-foreground touch-manipulation">
         <Providers>{children}</Providers>
+        <Analytics />
       </body>
     </html>
   );
