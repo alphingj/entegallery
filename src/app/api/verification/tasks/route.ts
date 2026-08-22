@@ -9,11 +9,34 @@ export async function GET(req: NextRequest) {
     const kind = req.nextUrl.searchParams.get("kind");
     const status = req.nextUrl.searchParams.get("status") ?? "pending";
     const limit = Math.min(parseInt(req.nextUrl.searchParams.get("limit") ?? "20", 10) || 20, 50);
-    let q = sb.from("verification_tasks").select("*, face_a:face_a_id(id,bounding_box,photo_id,photos!inner(thumbnail_url,file_name,google_drive_file_id)), face_b:face_b_id(id,bounding_box,photo_id,photos(thumbnail_url)), person:person_id(id,name)").eq("status", status).order("created_at", { ascending: true }).limit(limit);
+    // Use explicit FK hints: verification_tasks -> photo_faces (face_a/b) -> photos ; verification_tasks -> people
+    // Falls back to second query if embedding returns null (PostgREST alias quirks)
+    let q = sb
+      .from("verification_tasks")
+      .select(
+        "*, face_a:photo_faces!verification_tasks_face_a_id_fkey(id,bounding_box,photo_id,photos:photos!photo_faces_photo_id_fkey(thumbnail_url,file_name,google_drive_file_id,width,height)), face_b:photo_faces!verification_tasks_face_b_id_fkey(id,bounding_box,photo_id,photos:photos!photo_faces_photo_id_fkey(thumbnail_url,file_name,google_drive_file_id,width,height)), person:people!verification_tasks_person_id_fkey(id,name)"
+      )
+      .eq("status", status)
+      .order("created_at", { ascending: true })
+      .limit(limit);
     if (kind) q = q.eq("kind", kind);
     const { data, error } = await q;
     if (error) throw new Error(error.message);
-    return NextResponse.json({ tasks: data ?? [] });
+    // Fallback hydration if face_a is null due to FK name mismatch on older DBs
+    const tasks = (data ?? []) as unknown as Array<Record<string, unknown>>;
+    const needsFallback = tasks.some((t) => !t.face_a && (t.face_a_id as string));
+    if (needsFallback) {
+      const ids = tasks.filter((t) => !t.face_a && t.face_a_id).map((t) => t.face_a_id as string);
+      if (ids.length) {
+        const { data: faces } = await sb
+          .from("photo_faces")
+          .select("id,bounding_box,photo_id,photos!inner(thumbnail_url,file_name,google_drive_file_id,width,height)")
+          .in("id", ids);
+        const byId = new Map((faces ?? []).map((f: unknown) => [(f as { id: string }).id, f]));
+        for (const t of tasks) if (!t.face_a && t.face_a_id) t.face_a = byId.get(t.face_a_id as string) ?? null;
+      }
+    }
+    return NextResponse.json({ tasks });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "failed" }, { status: 500 });
   }
