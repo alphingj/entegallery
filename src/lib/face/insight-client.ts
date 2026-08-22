@@ -52,37 +52,69 @@ async function loadRecognition(): Promise<any> {
       } catch {
         /* ignore */
       }
-      // Stream glintr100 (antelopev2, ResNet100, 250MB) from external CDN — stays under Vercel Free 100MB limit
-      // Cached via Cache API after first load
-      const MODEL_URL = "https://huggingface.co/deepinsight/insightface/resolve/main/models/antelopev2/glintr100.onnx";
+      // Try glintr100 250MB from external CDNs (stays under Vercel Free 100MB limit), fallback to local w600k_mbf 13MB
+      const CANDIDATES = [
+        "https://huggingface.co/deepinsight/insightface/resolve/main/models/antelopev2/glintr100.onnx",
+        "https://cdn.jsdelivr.net/gh/deepinsight/insightface-zoo@main/models/antelopev2/glintr100.onnx",
+        "https://github.com/deepinsight/insightface/releases/download/v0.7/antelopev2.zip",
+      ];
       const CACHE_NAME = "insight-models-v1";
-      let modelBuffer: ArrayBuffer;
-      try {
-        const cache = await caches.open(CACHE_NAME);
-        const cached = await cache.match(MODEL_URL);
-        if (cached) {
-          modelBuffer = await cached.arrayBuffer();
-          console.log(`[insight] glintr100 cache hit ${(modelBuffer.byteLength / 1e6).toFixed(1)}MB`);
-        } else {
-          console.log(`[insight] fetching glintr100 250MB from HuggingFace...`);
+      let modelBuffer: ArrayBuffer | null = null;
+      let lastErr: unknown = null;
+      for (const MODEL_URL of CANDIDATES) {
+        try {
+          const isZip = MODEL_URL.endsWith(".zip");
+          // try cache first
+          try {
+            const cache = await caches.open(CACHE_NAME);
+            const cached = await cache.match(MODEL_URL);
+            if (cached) {
+              modelBuffer = await cached.arrayBuffer();
+              console.log(`[insight] cache hit ${MODEL_URL} ${(modelBuffer.byteLength / 1e6).toFixed(1)}MB`);
+              break;
+            }
+          } catch {
+            /* cache not available */
+          }
+          console.log(`[insight] fetching ${MODEL_URL} ...`);
           const res = await fetch(MODEL_URL);
-          if (!res.ok) throw new Error(`model fetch ${res.status}`);
-          // Clone for cache before consuming
-          await cache.put(MODEL_URL, res.clone());
-          modelBuffer = await res.arrayBuffer();
-          console.log(`[insight] glintr100 fetched ${(modelBuffer.byteLength / 1e6).toFixed(1)}MB`);
+          if (!res.ok) throw new Error(`model fetch ${res.status} ${MODEL_URL}`);
+          if (isZip) {
+            // antelopev2.zip contains glintr100.onnx — extract via JSZip
+            const JSZip = (await import("jszip")).default;
+            const zipBuf = await res.arrayBuffer();
+            const zip = await JSZip.loadAsync(zipBuf);
+            const entry = Object.keys(zip.files).find((k) => k.endsWith("glintr100.onnx"));
+            if (!entry) throw new Error("glintr100.onnx not in zip");
+            modelBuffer = await zip.files[entry].async("arraybuffer");
+          } else {
+            try {
+              const cache = await caches.open(CACHE_NAME);
+              await cache.put(MODEL_URL, res.clone());
+            } catch {
+              /* ignore cache put failure */
+            }
+            modelBuffer = await res.arrayBuffer();
+          }
+          console.log(`[insight] fetched ${(modelBuffer.byteLength / 1e6).toFixed(1)}MB from ${MODEL_URL}`);
+          break;
+        } catch (e) {
+          console.warn(`[insight] fetch failed for candidate`, e);
+          lastErr = e;
+          continue;
         }
-      } catch (e) {
-        console.warn("[insight] cache fetch failed, falling back to direct fetch", e);
-        const res = await fetch(MODEL_URL);
-        if (!res.ok) throw new Error(`model fetch ${res.status}`);
+      }
+      if (!modelBuffer) {
+        console.warn("[insight] all glintr100 candidates failed, falling back to local w600k_mbf 13MB", lastErr);
+        const res = await fetch("/models/insight/w600k_mbf.onnx");
+        if (!res.ok) throw new Error(`fallback w600k_mbf fetch ${res.status}`);
         modelBuffer = await res.arrayBuffer();
       }
       const session = await ort.InferenceSession.create(new Uint8Array(modelBuffer), {
         executionProviders: ["wasm"],
         graphOptimizationLevel: "all",
       });
-      console.log(`[insight] glintr100 loaded, inputs: ${session.inputNames.join(",")}`);
+      console.log(`[insight] model loaded ${(modelBuffer.byteLength / 1e6).toFixed(1)}MB, inputs: ${session.inputNames.join(",")}`);
       return session;
     })().catch((e) => {
       ortSessionPromise = null;
