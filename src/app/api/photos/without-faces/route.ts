@@ -5,7 +5,7 @@ export const maxDuration = 30;
 
 /**
  * GET /api/photos/without-faces?limit=25
- * Photos with zero detected faces yet — the browser backfill queue.
+ * Photos with face_scan_status = 'pending' — the browser backfill queue.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -18,9 +18,9 @@ export async function GET(req: NextRequest) {
     const { data, error } = await sb
       .from("photos")
       .select(
-        "id, google_drive_file_id, file_name, width, height, photo_faces!left(id)"
+        "id, google_drive_file_id, file_name, width, height, mime_type"
       )
-      .is("photo_faces.id", null)
+      .eq("face_scan_status", "pending")
       .order("created_at", { ascending: true })
       .limit(limit);
 

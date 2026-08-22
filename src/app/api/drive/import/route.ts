@@ -7,6 +7,7 @@ import {
   type DriveImageItem,
 } from "@/lib/google-drive";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { isHeic } from "@/lib/heic";
 
 export const maxDuration = 60;
 
@@ -36,19 +37,24 @@ async function mapWithConcurrency<T>(
  */
 export async function POST(req: NextRequest) {
   try {
-    const { pageToken } = (await req.json().catch(() => ({}))) as {
-      pageToken?: string;
-    };
+    const { pageToken, includeHeic = false } = (await req
+      .json()
+      .catch(() => ({}))) as { pageToken?: string; includeHeic?: boolean };
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
     if (!folderId) throw new DriveError("GOOGLE_DRIVE_FOLDER_ID missing.", 500);
 
     const { files, nextPageToken } = await listFolderImages(folderId, pageToken);
     const sb = getSupabaseAdmin();
 
+    // Filter HEIC based on includeHeic flag
+    const filtered = includeHeic
+      ? files
+      : files.filter((f) => !isHeic(f.mimeType, f.name));
+
     // Which of these are already indexed?
     const existing = new Set<string>();
-    for (let i = 0; i < files.length; i += 100) {
-      const chunk = files.slice(i, i + 100);
+    for (let i = 0; i < filtered.length; i += 100) {
+      const chunk = filtered.slice(i, i + 100);
       const { data, error } = await sb
         .from("photos")
         .select("google_drive_file_id")
@@ -59,7 +65,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const fresh = files.filter((f) => !existing.has(f.id));
+    const fresh = filtered.filter((f) => !existing.has(f.id));
 
     // Insert metadata rows, preserving the file's original created date.
     if (fresh.length > 0) {
@@ -71,6 +77,10 @@ export async function POST(req: NextRequest) {
         width: f.imageMediaMetadata?.width ?? null,
         height: f.imageMediaMetadata?.height ?? null,
         thumbnail_url: driveThumbnailUrl(f.id),
+        md5_checksum: f.md5Checksum ?? null,
+        face_scan_status: isHeic(f.mimeType, f.name)
+          ? "unsupported"
+          : "pending",
         ...(f.createdTime ? { created_at: f.createdTime } : {}),
       }));
       const { error } = await sb
@@ -87,9 +97,9 @@ export async function POST(req: NextRequest) {
     await mapWithConcurrency(files, 8, (f: DriveImageItem) => setLinkShared(f.id));
 
     return NextResponse.json({
-      found: files.length,
+      found: filtered.length,
       imported: fresh.length,
-      skipped: files.length - fresh.length,
+      skipped: filtered.length - fresh.length,
       nextPageToken,
     });
   } catch (err) {

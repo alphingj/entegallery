@@ -83,6 +83,7 @@ export interface PhotosResponse {
     id: string;
     google_drive_file_id: string;
     file_name: string | null;
+    mime_type: string | null;
     width: number | null;
     height: number | null;
     thumbnail_url: string | null;
@@ -91,8 +92,13 @@ export interface PhotosResponse {
   nextCursor: string | null;
 }
 
-export const fetchPhotos = (cursor?: string | null) =>
-  jsonFetch<PhotosResponse>(`/api/photos${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+export const fetchPhotos = (
+  cursor?: string | null,
+  heic: "exclude" | "only" | "all" = "exclude"
+) =>
+  jsonFetch<PhotosResponse>(
+    `/api/photos?heic=${heic}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+  );
 
 export interface FaceBox {
   faceId: string;
@@ -149,12 +155,19 @@ export interface ImportPageResult {
   nextPageToken: string | null;
 }
 
-export const importDrivePage = (pageToken?: string) =>
+export const importDrivePage = (pageToken?: string, includeHeic = false) =>
   jsonFetch<ImportPageResult>("/api/drive/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pageToken }),
+    body: JSON.stringify({ pageToken, includeHeic }),
   });
+
+export interface ImportStatus {
+  unscannedCount: number;
+}
+
+export const fetchImportStatus = () =>
+  jsonFetch<ImportStatus>("/api/import/status");
 
 export interface UnscannedPhoto {
   id: string;
@@ -162,6 +175,7 @@ export interface UnscannedPhoto {
   file_name: string | null;
   width: number | null;
   height: number | null;
+  mime_type: string | null;
 }
 
 export const fetchWithoutFaces = (limit = 25) =>
@@ -171,8 +185,37 @@ export const postFaceBackfill = (
   photoId: string,
   body: { faces: { descriptor: number[]; box: BoundingBox }[]; width?: number; height?: number }
 ) =>
-  jsonFetch<{ ok: boolean }>(`/api/photos/${photoId}/faces/backfill`, {
+  jsonFetch<{ ok: boolean; unsupported?: boolean }>(`/api/photos/${photoId}/faces/backfill`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+
+export interface DuplicateItem {
+  id: string;
+  file_name: string | null;
+  thumbnail_url: string | null;
+  byte_size: number | null;
+  created_at: string;
+}
+
+export interface DuplicateGroup {
+  md5: string;
+  items: DuplicateItem[];
+}
+
+export interface FindDuplicatesResult {
+  updated: number;
+  nextPageToken: string | null;
+  groups: DuplicateGroup[];
+}
+
+export const findDuplicatesPage = (pageToken?: string) =>
+  jsonFetch<FindDuplicatesResult>("/api/photos/find-duplicates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pageToken }),
+  });
+
+export const deletePhoto = (photoId: string) =>
+  jsonFetch<{ ok: boolean }>(`/api/photos/${photoId}`, { method: "DELETE" });

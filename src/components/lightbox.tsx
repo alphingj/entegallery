@@ -15,6 +15,8 @@ export interface LightboxPhoto {
   file_name: string | null;
   width: number | null;
   height: number | null;
+  /** HEIC can't be decoded by browsers — render Google's converted version */
+  isHeic?: boolean;
 }
 
 export function Lightbox({
@@ -99,7 +101,11 @@ export function Lightbox({
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={`/api/image/${photo.google_drive_file_id}`}
+              src={
+                photo.isHeic
+                  ? `https://drive.google.com/thumbnail?id=${photo.google_drive_file_id}&sz=w1600`
+                  : `/api/image/${photo.google_drive_file_id}`
+              }
               alt={photo.file_name ?? ""}
               className="h-full w-full object-contain"
               draggable={false}

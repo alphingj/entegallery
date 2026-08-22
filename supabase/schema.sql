@@ -102,3 +102,19 @@ language sql stable as $$
   order by distance asc
   limit 2;
 $$;
+
+-- ---------- migration: face-scan tracking + duplicate detection ----------
+-- face_scan_status: 'pending' | 'done' | 'unsupported'
+--   pending     → queued for browser face scan (continue-identification queue)
+--   done        → scanned (faces linked or none found)
+--   unsupported → HEIC/HEIF etc., cannot be decoded in-browser; never queued
+alter table photos add column if not exists face_scan_status text not null default 'pending';
+alter table photos add column if not exists md5_checksum text;
+
+create index if not exists idx_photos_face_scan on photos (face_scan_status);
+create index if not exists idx_photos_md5 on photos (md5_checksum) where md5_checksum is not null;
+
+-- Photos that already have faces are considered scanned.
+update photos p
+set face_scan_status = 'done'
+where exists (select 1 from photo_faces f where f.photo_id = p.id);

@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
           height:
             body.height ?? meta.imageMediaMetadata?.height ?? null,
           thumbnail_url: driveThumbnailUrl(body.fileId),
+          face_scan_status: "done",
         })
         .select("id")
         .single();

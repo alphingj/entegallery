@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { matchAndLinkFaces } from "@/lib/face-matcher";
+import { isHeic } from "@/lib/heic";
 
 export const maxDuration = 60;
 
@@ -26,12 +27,25 @@ export async function POST(
 
     const { data: photo, error: pErr } = await sb
       .from("photos")
-      .select("id")
+      .select("id, mime_type, file_name")
       .eq("id", id)
       .maybeSingle();
     if (pErr) throw new Error(pErr.message);
     if (!photo) {
       return NextResponse.json({ error: "photo not found" }, { status: 404 });
+    }
+
+    // HEIC: mark unsupported without attempting detection
+    if (isHeic(photo.mime_type, photo.file_name)) {
+      await sb
+        .from("photos")
+        .update({ face_scan_status: "unsupported" })
+        .eq("id", id);
+      return NextResponse.json({
+        ok: true,
+        unsupported: true,
+        diagnostics: [],
+      });
     }
 
     // Fill in dimensions if the import didn't have them.
@@ -42,8 +56,15 @@ export async function POST(
         .eq("id", id);
     }
 
+    // Run face matching
     const diagnostics = await matchAndLinkFaces(sb, id, body.faces ?? []);
     console.log(`backfill ${id}:`, JSON.stringify(diagnostics));
+
+    // Mark as done
+    await sb
+      .from("photos")
+      .update({ face_scan_status: "done" })
+      .eq("id", id);
 
     return NextResponse.json({ ok: true, diagnostics });
   } catch (err) {

@@ -2,15 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Images, Users } from "lucide-react";
 import Link from "next/link";
+import { FileImage, Images, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UploadSheet } from "@/components/upload-sheet";
-import { ImportDialog } from "@/components/import-dialog";
+import { LibraryDialog } from "@/components/library-dialog";
 import { cn } from "@/lib/utils";
 
-export function Nav({ active }: { active: "photos" | "people" }) {
+export function Nav({
+  active,
+}: {
+  active: "photos" | "heic" | "people";
+}) {
   const router = useRouter();
   const [q, setQ] = useState("");
 
@@ -32,6 +36,14 @@ export function Nav({ active }: { active: "photos" | "people" }) {
             className={cn(active === "photos" && "bg-secondary")}
           >
             <Link href="/"><Images className="size-4" /> Photos</Link>
+          </Button>
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className={cn(active === "heic" && "bg-secondary")}
+          >
+            <Link href="/heic"><FileImage className="size-4" /> HEIC</Link>
           </Button>
           <Button
             asChild
@@ -59,7 +71,7 @@ export function Nav({ active }: { active: "photos" | "people" }) {
             />
           </form>
 
-          <ImportDialog />
+          <LibraryDialog />
           <UploadSheet />
         </div>
       </div>

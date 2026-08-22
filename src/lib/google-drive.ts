@@ -188,6 +188,7 @@ export interface DriveImageItem {
   mimeType: string;
   size?: string;
   createdTime?: string;
+  md5Checksum?: string;
   imageMediaMetadata?: { width?: number; height?: number };
 }
 
@@ -205,7 +206,7 @@ export async function listFolderImages(
     pageSize: "1000",
     orderBy: "createdTime desc",
     fields:
-      "nextPageToken, files(id,name,mimeType,size,createdTime,imageMediaMetadata(width,height))",
+      "nextPageToken, files(id,name,mimeType,size,createdTime,md5Checksum,imageMediaMetadata(width,height))",
     supportsAllDrives: "true",
     includeItemsFromAllDrives: "true",
   });
@@ -225,4 +226,26 @@ export async function listFolderImages(
     nextPageToken?: string;
   };
   return { files: json.files ?? [], nextPageToken: json.nextPageToken ?? null };
+}
+
+/** Move a file to the Drive trash (recoverable). */
+export async function trashFile(fileId: string): Promise<void> {
+  const token = await getAccessToken();
+  const res = await fetch(
+    `${DRIVE_API}/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ trashed: true }),
+    }
+  );
+  if (!res.ok) {
+    throw new DriveError(
+      `Drive trash failed (${res.status}) for ${fileId}`,
+      res.status === 404 ? 404 : 502
+    );
+  }
 }
