@@ -39,7 +39,22 @@ export async function POST(req: NextRequest) {
       const firstId = sourceIds[0];
       const { data: firstPerson, error: fpErr } = await sb.from("people").select("descriptor").eq("id", firstId).single();
       if (fpErr || !firstPerson) throw new Error(fpErr?.message ?? "source person not found");
-      const vec = typeof firstPerson.descriptor === "string" ? (firstPerson.descriptor as string).split(",").map(Number) : (firstPerson.descriptor as number[]);
+      let vec: number[];
+      if (typeof firstPerson.descriptor === "string") {
+        // Handle potential null/empty values in the descriptor string
+        vec = (firstPerson.descriptor as string)
+          .split(",")
+          .map(s => s.trim())
+          .filter(s => s !== "" && s !== "null")
+          .map(Number)
+          .filter(n => Number.isFinite(n));
+      } else {
+        vec = (firstPerson.descriptor as number[]).filter(n => Number.isFinite(n));
+      }
+      // Ensure we have a valid descriptor
+      if (vec.length !== 512) {
+        throw new Error(`Invalid descriptor dimension: ${vec.length}`);
+      }
       const { data: keeper, error: kErr } = await sb.from("people").insert({ name: targetName.trim(), descriptor: vec }).select("id, name").single();
       if (kErr) throw new Error(kErr.message);
       keeperId = keeper.id as string;
@@ -78,7 +93,17 @@ export async function POST(req: NextRequest) {
             : 512;
         const sum = new Array(dim).fill(0);
         for (const f of faces as { descriptor: string | number[] }[]) {
-          const vec = typeof f.descriptor === "string" ? f.descriptor.split(",").map(Number) : (f.descriptor as number[]);
+          let vec: number[];
+          if (typeof f.descriptor === "string") {
+            vec = (f.descriptor as string)
+              .split(",")
+              .map(s => s.trim())
+              .filter(s => s !== "" && s !== "null")
+              .map(Number)
+              .filter(n => Number.isFinite(n));
+          } else {
+            vec = (f.descriptor as number[]).filter(n => Number.isFinite(n));
+          }
           for (let d = 0; d < dim; d++) sum[d] += vec[d] ?? 0;
         }
         for (let d = 0; d < dim; d++) sum[d] /= faces.length;
