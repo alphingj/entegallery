@@ -271,7 +271,7 @@ export function LibraryDialog() {
               Continue importing
             </Button>
 
-            <div className="flex items-center gap-2 rounded-lg border p-2.5">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border p-2.5">
               <Label htmlFor="scan-limit" className="text-xs font-medium whitespace-nowrap">
                 Scan limit
               </Label>
@@ -288,7 +288,7 @@ export function LibraryDialog() {
                   setScanLimit(n);
                   localStorage.setItem("scanLimit", String(n));
                 }}
-                className="h-8 w-20"
+                className="h-11 w-20 text-base"
               />
               <label className="flex items-center gap-1.5 text-xs">
                 <input
@@ -300,11 +300,11 @@ export function LibraryDialog() {
                     setScanAll(v);
                     localStorage.setItem("scanLimit", v ? "all" : String(scanLimit ?? 50));
                   }}
-                  className="size-3.5 accent-primary"
+                  className="size-5 accent-primary"
                 />
                 All
               </label>
-              <span className="ml-auto text-xs text-muted-foreground" title="Already scanned images are automatically skipped — resume picks up where you paused">
+              <span className="w-full text-xs text-muted-foreground sm:ml-auto sm:w-auto" title="Already scanned images are automatically skipped — resume picks up where you paused">
                 {unscanned !== null ? `${unscanned} pending` : ""} · skip scanned ✓
               </span>
             </div>
@@ -375,8 +375,7 @@ export function LibraryDialog() {
             )}
             <Button
               variant="outline"
-              size="sm"
-              className="w-full"
+              className="min-h-11 w-full"
               onClick={() => scanAbortRef.current?.abort()}
             >
               Pause — resume later picks up where you left off
@@ -396,7 +395,7 @@ export function LibraryDialog() {
         )}
 
         {duplicateGroups.length > 0 && (
-          <div className="-mx-2 space-y-4 overflow-y-auto px-2" style={{ maxHeight: 320 }}>
+          <div className="-mx-2 max-h-[min(320px,50dvh)] space-y-4 overflow-y-auto px-2">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium">
                 {duplicateGroups.length} duplicate group

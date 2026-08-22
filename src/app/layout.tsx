@@ -22,6 +22,12 @@ export const metadata: Metadata = {
     "Personal photo library on Google Drive with browser-only face recognition.",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover" as const,
+};
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
@@ -29,7 +35,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
       suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col bg-background text-foreground">
+      <body className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-background text-foreground touch-manipulation">
         <Providers>{children}</Providers>
       </body>
     </html>

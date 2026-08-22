@@ -22,8 +22,7 @@ function isHeicItem(p: { mime_type: string | null; file_name: string | null }) {
 /**
  * Shared infinite-scroll photo grid used by both the Photos and HEIC tabs.
  * - HEIC thumbnails via Google CDN; full-res via CDN for heic.
- * - Always-visible checkboxes for bulk selection.
- * - Bulk download as single ZIP (honors HEIC converted JPEG).
+ * - Long-press (450ms) enters select mode; then checkboxes + bulk bar appear.
  */
 export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
   const {
@@ -42,7 +41,9 @@ export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
   const [zipping, setZipping] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -61,11 +62,13 @@ export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
 
   const photos = data?.pages.flatMap((p) => p.photos) ?? [];
 
+  // Clear selection when switching tabs (heic prop change)
   const prevHeicRef = useRef(heic);
   useEffect(() => {
     if (prevHeicRef.current === heic) return;
     prevHeicRef.current = heic;
     setSelected(new Set());
+    setSelectMode(false);
   }, [heic]);
 
   function toggle(id: string) {
@@ -75,6 +78,26 @@ export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
       else next.add(id);
       return next;
     });
+  }
+
+  function handleTouchStart(id: string) {
+    if (selectMode) return;
+    longPressTimer.current = setTimeout(() => {
+      setSelectMode(true);
+      toggle(id);
+      navigator.vibrate?.(20);
+    }, 450);
+  }
+  function cancelLongPress() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelected(new Set());
   }
 
   async function downloadZip() {
@@ -90,7 +113,6 @@ export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Failed to fetch ${p.file_name}`);
         const blob = await res.blob();
-        // Save HEIC as .jpg since CDN returns converted JPEG
         let name = p.file_name || `${p.id}.jpg`;
         if (isHeicItem(p) && /\.(heic|heif)$/i.test(name)) {
           name = name.replace(/\.(heic|heif)$/i, ".jpg");
@@ -110,32 +132,38 @@ export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
 
   return (
     <>
-      {/* Bulk bar */}
-      {selected.size > 0 && (
-        <div className="sticky top-[57px] z-20 mb-3 flex items-center justify-between rounded-lg border bg-card px-3 py-2 shadow-sm">
+      {/* Bulk bar — only in select mode */}
+      {selectMode && selected.size > 0 && (
+        <div className="sticky top-[calc(3rem+env(safe-area-inset-top))] z-20 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2 shadow-sm sm:top-[calc(3.5rem+env(safe-area-inset-top))]">
           <span className="text-sm font-medium">
             {selected.size} selected
           </span>
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={downloadZip} disabled={zipping}>
+            <Button size="sm" className="min-h-11" onClick={downloadZip} disabled={zipping}>
               <Download className="mr-1.5 size-4" />
               {zipping ? "Zipping…" : `Download ZIP`}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            <Button size="sm" variant="ghost" className="min-h-11" onClick={exitSelectMode}>
               <X className="size-4" />
             </Button>
           </div>
         </div>
       )}
+      {selectMode && selected.size === 0 && (
+        <div className="sticky top-[calc(3rem+env(safe-area-inset-top))] z-20 mb-3 flex items-center justify-between rounded-lg border bg-card px-3 py-2 shadow-sm sm:top-[calc(3.5rem+env(safe-area-inset-top))]">
+          <span className="text-sm text-muted-foreground">Long-press photos to select · tap to toggle</span>
+          <Button size="sm" variant="ghost" className="min-h-11" onClick={exitSelectMode}>Exit</Button>
+        </div>
+      )}
 
       {isLoading ? (
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {Array.from({ length: 18 }).map((_, i) => (
             <Skeleton key={i} className="aspect-square rounded-md" />
           ))}
         </div>
       ) : photos.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 py-32 text-center">
+        <div className="flex min-h-[40dvh] flex-col items-center justify-center gap-2 py-16 text-center sm:py-24">
           <h1 className="text-lg font-semibold">
             {heic === "only" ? "No HEIC images" : "No photos yet"}
           </h1>
@@ -146,27 +174,44 @@ export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {photos.map((photo, i) => {
             const checked = selected.has(photo.id);
             return (
               <div
                 key={photo.id}
-                className="group relative overflow-hidden rounded-md bg-muted focus-within:outline-2 focus-within:outline-primary"
+                className="group relative overflow-hidden rounded-md bg-muted focus-within:outline-2 focus-within:outline-primary touch-manipulation select-none"
                 style={{ aspectRatio: "1 / 1" }}
+                onTouchStart={() => handleTouchStart(photo.id)}
+                onTouchEnd={cancelLongPress}
+                onTouchMove={cancelLongPress}
+                onContextMenu={(e) => e.preventDefault()}
               >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggle(photo.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  aria-label={`Select ${photo.file_name ?? "photo"}`}
-                  className="absolute left-2 top-2 z-10 size-5 cursor-pointer rounded border bg-white/90 accent-primary shadow"
-                />
+                {selectMode && (
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggle(photo.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select ${photo.file_name ?? "photo"}`}
+                    className="absolute left-2 top-2 z-10 size-4 cursor-pointer rounded border bg-white/90 accent-primary shadow sm:size-5"
+                  />
+                )}
+                {/* enlarged tap target for checkbox on touch */}
+                {selectMode && (
+                  <button
+                    aria-hidden
+                    onClick={(e) => { e.stopPropagation(); toggle(photo.id); }}
+                    className="absolute left-0 top-0 z-[9] size-11"
+                  />
+                )}
                 <button
-                  onClick={() => setLightboxIndex(i)}
+                  onClick={() => {
+                    if (selectMode) toggle(photo.id);
+                    else setLightboxIndex(i);
+                  }}
                   className="absolute inset-0 focus-visible:outline-none"
-                  aria-label={`Open ${photo.file_name ?? "photo"}`}
+                  aria-label={`${selectMode ? (checked ? "Deselect" : "Select") : "Open"} ${photo.file_name ?? "photo"}`}
                 >
                   {photo.thumbnail_url && (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -177,6 +222,9 @@ export function LibraryGrid({ heic }: { heic: "exclude" | "only" }) {
                       draggable={false}
                       className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
                     />
+                  )}
+                  {checked && selectMode && (
+                    <span className="absolute inset-0 ring-2 ring-primary ring-inset" />
                   )}
                 </button>
               </div>

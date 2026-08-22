@@ -120,11 +120,16 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    min-width: 0;
   }
   body {
     @apply bg-background text-foreground;
   }
   html {
     @apply font-sans;
+  }
+  /* prevent horizontal scroll on 320px */
+  html, body {
+    overflow-x: hidden;
   }
 }
