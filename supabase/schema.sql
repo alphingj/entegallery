@@ -133,7 +133,7 @@ create index if not exists idx_faces_descriptor_hnsw on photo_faces using hnsw (
 -- Update match functions to 512d
 create or replace function match_person(
   q vector(512),
-  max_dist float default 0.35
+  max_dist float default 0.30
 )
 returns table (person_id uuid, name text, distance float)
 language sql stable as $$
@@ -148,7 +148,7 @@ $$;
 
 create or replace function match_person_top2(
   q vector(512),
-  max_dist float default 0.35
+  max_dist float default 0.30
 )
 returns table (person_id uuid, name text, distance float)
 language sql stable as $$
@@ -160,3 +160,21 @@ language sql stable as $$
   order by distance asc
   limit 2;
 $$;
+
+-- ---------- verification tasks (Google Photos–style human review) ----------
+create table if not exists verification_tasks (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null check (kind in ('same_person','face_name')),
+  face_a_id uuid references photo_faces(id) on delete cascade,
+  face_b_id uuid references photo_faces(id) on delete cascade,
+  person_id uuid references people(id) on delete set null,
+  best_distance float,
+  second_distance float,
+  status text not null default 'pending' check (status in ('pending','confirmed','rejected')),
+  created_at timestamptz not null default now(),
+  resolved_at timestamptz,
+  unique (kind, face_a_id, face_b_id),
+  unique (kind, face_a_id, person_id)
+);
+create index if not exists idx_verif_status on verification_tasks(status, kind);
+create index if not exists idx_verif_face_a on verification_tasks(face_a_id);

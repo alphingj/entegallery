@@ -52,11 +52,37 @@ async function loadRecognition(): Promise<any> {
       } catch {
         /* ignore */
       }
-      const session = await ort.InferenceSession.create("/models/insight/w600k_mbf.onnx", {
+      // Stream glintr100 (antelopev2, ResNet100, 250MB) from external CDN — stays under Vercel Free 100MB limit
+      // Cached via Cache API after first load
+      const MODEL_URL = "https://huggingface.co/deepinsight/insightface/resolve/main/models/antelopev2/glintr100.onnx";
+      const CACHE_NAME = "insight-models-v1";
+      let modelBuffer: ArrayBuffer;
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        const cached = await cache.match(MODEL_URL);
+        if (cached) {
+          modelBuffer = await cached.arrayBuffer();
+          console.log(`[insight] glintr100 cache hit ${(modelBuffer.byteLength / 1e6).toFixed(1)}MB`);
+        } else {
+          console.log(`[insight] fetching glintr100 250MB from HuggingFace...`);
+          const res = await fetch(MODEL_URL);
+          if (!res.ok) throw new Error(`model fetch ${res.status}`);
+          // Clone for cache before consuming
+          await cache.put(MODEL_URL, res.clone());
+          modelBuffer = await res.arrayBuffer();
+          console.log(`[insight] glintr100 fetched ${(modelBuffer.byteLength / 1e6).toFixed(1)}MB`);
+        }
+      } catch (e) {
+        console.warn("[insight] cache fetch failed, falling back to direct fetch", e);
+        const res = await fetch(MODEL_URL);
+        if (!res.ok) throw new Error(`model fetch ${res.status}`);
+        modelBuffer = await res.arrayBuffer();
+      }
+      const session = await ort.InferenceSession.create(new Uint8Array(modelBuffer), {
         executionProviders: ["wasm"],
         graphOptimizationLevel: "all",
       });
-      console.log(`[insight] w600k_mbf loaded, inputs: ${session.inputNames.join(",")}`);
+      console.log(`[insight] glintr100 loaded, inputs: ${session.inputNames.join(",")}`);
       return session;
     })().catch((e) => {
       ortSessionPromise = null;
@@ -182,7 +208,7 @@ export async function detectFaces(blob: Blob): Promise<{ faces: DetectedFace[]; 
     const results = await session.run(feeds);
     const outName = session.outputNames[0];
     const embedding = results[outName].data as Float32Array;
-    // w600k_mbf outputs 512d, already L2-ish but normalize for cosine
+    // glintr100 outputs 512d, already L2-ish but normalize for cosine
     const descriptor = l2normalize(embedding as unknown as Float32Array);
 
     faces.push({

@@ -52,9 +52,9 @@ export async function matchAndLinkFaces(
   faces: { descriptor: unknown; box: unknown }[]
 ): Promise<FaceMatchDiagnostic[]> {
   const threshold = parseFloat(
-    process.env.NEXT_PUBLIC_FACE_MATCH_THRESHOLD ?? "0.35"
+    process.env.NEXT_PUBLIC_FACE_MATCH_THRESHOLD ?? "0.30"
   );
-  const margin = parseFloat(process.env.NEXT_PUBLIC_FACE_MATCH_MARGIN ?? "0.08");
+  const margin = parseFloat(process.env.NEXT_PUBLIC_FACE_MATCH_MARGIN ?? "0.06");
 
   const valid = faces.filter(
     (f) => isValidDescriptor(f.descriptor) && isValidBox(f.box)
@@ -82,7 +82,7 @@ export async function matchAndLinkFaces(
     let name: string;
     let matched = false;
 
-    const AUTO_MATCH_FLOOR = 0.20; // ArcFace 512d: below this, best is trusted regardless of margin
+    const AUTO_MATCH_FLOOR = 0.15; // glintr100 tighter: below this, best is trusted regardless of margin
     if (
       best &&
       (best.distance < AUTO_MATCH_FLOOR ||
