@@ -45,7 +45,9 @@ create table if not exists photo_faces (
 
 create index if not exists idx_faces_photo  on photo_faces (photo_id);
 create index if not exists idx_faces_person on photo_faces (person_id);
-create index if not exists idx_faces_descriptor on photo_faces using ivfflat (descriptor vector_cosine_ops) with (lists = 100);
+-- hnsw is exact enough for <10k vectors and avoids ivfflat 0-distance artifacts on small tables
+drop index if exists idx_faces_descriptor;
+create index if not exists idx_faces_descriptor_hnsw on photo_faces using hnsw (descriptor vector_cosine_ops);
 
 -- ---------- matching ----------
 -- Compare a new descriptor against EVERY stored face of each person.

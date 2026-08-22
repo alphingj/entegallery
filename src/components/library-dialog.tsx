@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   CloudDownload,
@@ -20,6 +20,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Label } from "@/components/ui/label";
 import {
@@ -57,6 +58,18 @@ export function LibraryDialog() {
   const [synced, setSynced] = useState({ imported: 0, skipped: 0 });
   const [scanProgress, setScanProgress] = useState({ done: 0, current: "" });
   const [unscanned, setUnscanned] = useState<number | null>(null);
+  const [scanLimit, setScanLimit] = useState<number | null>(() => {
+    if (typeof window === "undefined") return 50;
+    const v = localStorage.getItem("scanLimit");
+    if (v === "all") return null;
+    const n = parseInt(v ?? "50", 10);
+    return Number.isNaN(n) ? 50 : n;
+  });
+  const [scanAll, setScanAll] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("scanLimit") === "all";
+  });
+  const scanAbortRef = useRef<AbortController | null>(null);
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
   const [dupesProgress, setDupesProgress] = useState({ scanned: 0 });
   const [error, setError] = useState<string | null>(null);
@@ -80,35 +93,53 @@ export function LibraryDialog() {
     );
   }
 
-  async function runScan(): Promise<number> {
-    const done = await runFaceScan((d, current) =>
-      setScanProgress({ done: d, current })
-    );
+  async function runScan(signal?: AbortSignal): Promise<number> {
+    const limit = scanAll ? null : scanLimit;
+    const done = await runFaceScan((d, current) => setScanProgress({ done: d, current }), {
+      signal,
+      limit,
+    });
     return done;
   }
 
   async function handleAction(action: Exclude<Action, null>) {
     setError(null);
     setDuplicateGroups([]);
+    const ac = new AbortController();
+    scanAbortRef.current = ac;
     try {
       if (action === "import" || action === "both") {
         setPhase("syncing");
         setRunningAction(action);
         await runSync();
+        if (ac.signal.aborted) throw new DOMException("Aborted", "AbortError");
       }
       if (action === "identify" || action === "both") {
         setPhase("scanning");
         setRunningAction(action);
         setScanProgress({ done: 0, current: "" });
-        const done = await runScan();
-        toast.success(`Scanned ${done} photos for faces`);
+        const done = await runScan(ac.signal);
+        if (ac.signal.aborted) {
+          setPhase("idle");
+          toast(`Paused at ${done} — click Continue to resume remaining.`);
+          return;
+        }
+        const limitLabel = scanAll ? "all" : `limit ${scanLimit}`;
+        toast.success(`Scanned ${done} photos for faces (${limitLabel}) — already scanned were skipped`);
       }
       setPhase("done");
       await refreshQueries();
     } catch (err) {
+      if ((err as DOMException)?.name === "AbortError" || (err as Error)?.message === "Aborted") {
+        setPhase("idle");
+        toast(`Paused — ${scanProgress.done} scanned. Resume to continue remaining.`);
+        return;
+      }
       console.error(err);
       setError(err instanceof Error ? err.message : "Operation failed");
+      setPhase("idle");
     } finally {
+      scanAbortRef.current = null;
       setRunningAction(null);
       void fetchImportStatus().then((s) => setUnscanned(s.unscannedCount)).catch(() => {});
     }
@@ -240,6 +271,44 @@ export function LibraryDialog() {
               Continue importing
             </Button>
 
+            <div className="flex items-center gap-2 rounded-lg border p-2.5">
+              <Label htmlFor="scan-limit" className="text-xs font-medium whitespace-nowrap">
+                Scan limit
+              </Label>
+              <Input
+                id="scan-limit"
+                type="number"
+                min={1}
+                max={5000}
+                disabled={scanAll || busy}
+                value={scanLimit ?? 50}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  const n = Number.isNaN(v) ? 50 : Math.max(1, Math.min(5000, v));
+                  setScanLimit(n);
+                  localStorage.setItem("scanLimit", String(n));
+                }}
+                className="h-8 w-20"
+              />
+              <label className="flex items-center gap-1.5 text-xs">
+                <input
+                  type="checkbox"
+                  checked={scanAll}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const v = e.target.checked;
+                    setScanAll(v);
+                    localStorage.setItem("scanLimit", v ? "all" : String(scanLimit ?? 50));
+                  }}
+                  className="size-3.5 accent-primary"
+                />
+                All
+              </label>
+              <span className="ml-auto text-xs text-muted-foreground" title="Already scanned images are automatically skipped — resume picks up where you paused">
+                {unscanned !== null ? `${unscanned} pending` : ""} · skip scanned ✓
+              </span>
+            </div>
+
             <Button
               onClick={() => handleAction("identify")}
               disabled={busy}
@@ -294,12 +363,24 @@ export function LibraryDialog() {
             <p className="text-sm">
               Scanning photos for faces…{" "}
               <span className="font-semibold">{scanProgress.done}</span> done
+              {!scanAll && scanLimit !== null && (
+                <span className="text-muted-foreground"> / {scanLimit}</span>
+              )}
+              <span className="ml-2 text-xs text-muted-foreground">· already scanned are skipped</span>
             </p>
             {scanProgress.current && (
               <p className="truncate text-xs text-muted-foreground">
                 {scanProgress.current}
               </p>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => scanAbortRef.current?.abort()}
+            >
+              Pause — resume later picks up where you left off
+            </Button>
           </div>
         )}
 

@@ -57,31 +57,43 @@ async function scanOne(photo: {
   await postFaceBackfill(photo.id, { faces, width, height });
 }
 
-/** Phase 2: browser-side face detection for pending photos (idempotent, resumable). */
+/** Phase 2: browser-side face detection for pending photos (idempotent, resumable, pausable, capped). */
 export async function runFaceScan(
   onProgress: (done: number, current: string) => void,
-  concurrency = 3
+  opts: { concurrency?: number; signal?: AbortSignal; limit?: number | null } = {}
 ): Promise<number> {
+  const concurrency = opts.concurrency ?? 3;
+  const signal = opts.signal;
+  const limit = opts.limit ?? null; // null = all
   let done = 0;
-  // Prioritize accuracy (SSD/1920) — concurrency gives the speed without shrinking the model.
   const CONCURRENCY = Math.max(1, Math.min(concurrency, 6));
 
-  for (;;) {
-    const { photos } = await fetchWithoutFaces(25);
+  outer: for (;;) {
+    if (signal?.aborted) break;
+    if (limit !== null && done >= limit) break;
+    const remaining = limit !== null ? Math.min(25, limit - done) : 25;
+    if (remaining <= 0) break;
+    const { photos } = await fetchWithoutFaces(remaining);
     if (photos.length === 0) break;
 
-    // Process this page with bounded parallelism — keeps GPU fed and shows real utilization.
     for (let i = 0; i < photos.length; i += CONCURRENCY) {
+      if (signal?.aborted) break outer;
+      if (limit !== null && done >= limit) break outer;
       const batch = photos.slice(i, i + CONCURRENCY);
-      onProgress(done, batch[0]?.file_name ?? "");
+      // respect limit within batch
+      const effectiveBatch =
+        limit !== null ? batch.slice(0, limit - done) : batch;
+      if (effectiveBatch.length === 0) break outer;
+      onProgress(done, effectiveBatch[0]?.file_name ?? "");
       await Promise.all(
-        batch.map((photo) =>
+        effectiveBatch.map((photo) =>
           scanOne(photo).then(() => {
             done++;
             onProgress(done, "");
           })
         )
       );
+      if (signal?.aborted) break outer;
     }
   }
   return done;
