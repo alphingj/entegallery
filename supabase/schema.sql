@@ -164,17 +164,21 @@ $$;
 -- ---------- verification tasks (Google Photos–style human review) ----------
 create table if not exists verification_tasks (
   id uuid primary key default gen_random_uuid(),
-  kind text not null check (kind in ('same_person','face_name')),
+  kind text not null check (kind in ('same_person','face_name','bulk_name_entry','swipe_validation')),
   face_a_id uuid references photo_faces(id) on delete cascade,
   face_b_id uuid references photo_faces(id) on delete cascade,
   person_id uuid references people(id) on delete set null,
   best_distance float,
   second_distance float,
-  status text not null default 'pending' check (status in ('pending','confirmed','rejected')),
+  status text not null default 'pending' check (status in ('pending','confirmed','rejected','skipped')),
   created_at timestamptz not null default now(),
   resolved_at timestamptz,
+  skip_session_id text,
+  person_group_id uuid,
   unique (kind, face_a_id, face_b_id),
   unique (kind, face_a_id, person_id)
 );
 create index if not exists idx_verif_status on verification_tasks(status, kind);
 create index if not exists idx_verif_face_a on verification_tasks(face_a_id);
+create index if not exists idx_verif_skip_session on verification_tasks(skip_session_id);
+create index if not exists idx_verif_person_group on verification_tasks(person_group_id);
