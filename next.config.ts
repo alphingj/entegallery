@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // onnxruntime-web is dynamically imported in the browser only
 };
 
 export default nextConfig;

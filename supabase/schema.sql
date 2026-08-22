@@ -120,3 +120,43 @@ create index if not exists idx_photos_md5 on photos (md5_checksum) where md5_che
 update photos p
 set face_scan_status = 'done'
 where exists (select 1 from photo_faces f where f.photo_id = p.id);
+
+-- ---------- migration: InsightFace 512d (buffalo_sc) ----------
+-- Run this after wiping people/photo_faces (you already did). Converts 128d -> 512d.
+-- If you already wiped, the USING casts are no-ops (0 rows to convert).
+drop index if exists idx_faces_descriptor_hnsw;
+drop index if exists idx_faces_descriptor;
+alter table people alter column descriptor type vector(512) using descriptor::text::vector(512);
+alter table photo_faces alter column descriptor type vector(512) using descriptor::text::vector(512);
+create index if not exists idx_faces_descriptor_hnsw on photo_faces using hnsw (descriptor vector_cosine_ops);
+
+-- Update match functions to 512d
+create or replace function match_person(
+  q vector(512),
+  max_dist float default 0.35
+)
+returns table (person_id uuid, name text, distance float)
+language sql stable as $$
+  select f.person_id, p.name, min(f.descriptor <=> q)::float as distance
+  from photo_faces f
+  join people p on p.id = f.person_id
+  group by f.person_id, p.name
+  having min(f.descriptor <=> q) < max_dist
+  order by distance asc
+  limit 1;
+$$;
+
+create or replace function match_person_top2(
+  q vector(512),
+  max_dist float default 0.35
+)
+returns table (person_id uuid, name text, distance float)
+language sql stable as $$
+  select f.person_id, p.name, min(f.descriptor <=> q)::float as distance
+  from photo_faces f
+  join people p on p.id = f.person_id
+  group by f.person_id, p.name
+  having min(f.descriptor <=> q) < max_dist
+  order by distance asc
+  limit 2;
+$$;

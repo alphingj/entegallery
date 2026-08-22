@@ -19,7 +19,7 @@ interface Candidate {
 export function isValidDescriptor(d: unknown): d is number[] {
   return (
     Array.isArray(d) &&
-    d.length === 128 &&
+    d.length === 512 &&
     d.every((n) => typeof n === "number" && Number.isFinite(n))
   );
 }
@@ -52,9 +52,9 @@ export async function matchAndLinkFaces(
   faces: { descriptor: unknown; box: unknown }[]
 ): Promise<FaceMatchDiagnostic[]> {
   const threshold = parseFloat(
-    process.env.NEXT_PUBLIC_FACE_MATCH_THRESHOLD ?? "0.28"
+    process.env.NEXT_PUBLIC_FACE_MATCH_THRESHOLD ?? "0.35"
   );
-  const margin = parseFloat(process.env.NEXT_PUBLIC_FACE_MATCH_MARGIN ?? "0.02");
+  const margin = parseFloat(process.env.NEXT_PUBLIC_FACE_MATCH_MARGIN ?? "0.08");
 
   const valid = faces.filter(
     (f) => isValidDescriptor(f.descriptor) && isValidBox(f.box)
@@ -82,7 +82,7 @@ export async function matchAndLinkFaces(
     let name: string;
     let matched = false;
 
-    const AUTO_MATCH_FLOOR = 0.12; // below this, best is trusted regardless of margin
+    const AUTO_MATCH_FLOOR = 0.20; // ArcFace 512d: below this, best is trusted regardless of margin
     if (
       best &&
       (best.distance < AUTO_MATCH_FLOOR ||
