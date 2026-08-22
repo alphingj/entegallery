@@ -139,3 +139,40 @@ export const login = (password: string) =>
   });
 
 export const logout = () => fetch("/api/auth/logout", { method: "POST" });
+
+// ---------- drive import + face backfill ----------
+
+export interface ImportPageResult {
+  found: number;
+  imported: number;
+  skipped: number;
+  nextPageToken: string | null;
+}
+
+export const importDrivePage = (pageToken?: string) =>
+  jsonFetch<ImportPageResult>("/api/drive/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pageToken }),
+  });
+
+export interface UnscannedPhoto {
+  id: string;
+  google_drive_file_id: string;
+  file_name: string | null;
+  width: number | null;
+  height: number | null;
+}
+
+export const fetchWithoutFaces = (limit = 25) =>
+  jsonFetch<{ photos: UnscannedPhoto[] }>(`/api/photos/without-faces?limit=${limit}`);
+
+export const postFaceBackfill = (
+  photoId: string,
+  body: { faces: { descriptor: number[]; box: BoundingBox }[]; width?: number; height?: number }
+) =>
+  jsonFetch<{ ok: boolean }>(`/api/photos/${photoId}/faces/backfill`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });

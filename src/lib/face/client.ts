@@ -26,7 +26,7 @@ export function loadFaceApi(): Promise<FaceApi> {
   return loaderPromise;
 }
 
-const MAX_INFER_DIM = 1600;
+const MAX_INFER_DIM = 1920;
 
 interface PreparedImage {
   canvas: HTMLCanvasElement;
@@ -34,12 +34,12 @@ interface PreparedImage {
   naturalHeight: number;
 }
 
-function loadImageElement(file: File): Promise<HTMLImageElement> {
+function loadImageElement(blob: Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`Could not decode ${file.name}`));
+    img.onerror = () => reject(new Error("Could not decode image"));
     img.src = url;
   });
 }
@@ -86,7 +86,7 @@ export interface DetectedFace {
   box: BoundingBox;
 }
 
-export async function detectFaces(file: File): Promise<{ faces: DetectedFace[]; width: number; height: number }> {
+export async function detectFaces(file: Blob): Promise<{ faces: DetectedFace[]; width: number; height: number }> {
   const faceapi = await loadFaceApi();
   const imgEl = await loadImageElement(file);
   const prepared = drawScaled(imgEl);

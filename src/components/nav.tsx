@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UploadSheet } from "@/components/upload-sheet";
+import { ImportDialog } from "@/components/import-dialog";
 import { cn } from "@/lib/utils";
 
 export function Nav({ active }: { active: "photos" | "people" }) {
@@ -42,22 +43,25 @@ export function Nav({ active }: { active: "photos" | "people" }) {
           </Button>
         </nav>
 
-        <form
-          className="ml-auto w-full max-w-xs"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (q.trim()) router.push(`/search?q=${encodeURIComponent(q.trim())}`);
-          }}
-        >
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search people…"
-            aria-label="Search people"
-          />
-        </form>
+        <div className="ml-auto flex items-center gap-2">
+          <form
+            className="w-full max-w-xs"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (q.trim()) router.push(`/search?q=${encodeURIComponent(q.trim())}`);
+            }}
+          >
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search people…"
+              aria-label="Search people"
+            />
+          </form>
 
-        <UploadSheet />
+          <ImportDialog />
+          <UploadSheet />
+        </div>
       </div>
     </header>
   );

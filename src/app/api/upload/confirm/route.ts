@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { BoundingBox, DetectedFacePayload } from "@/lib/types";
+import { DetectedFacePayload } from "@/lib/types";
 import {
   DriveError,
   driveThumbnailUrl,
@@ -7,6 +7,7 @@ import {
   setLinkShared,
 } from "@/lib/google-drive";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { matchAndLinkFaces } from "@/lib/face-matcher";
 
 export const maxDuration = 60;
 
@@ -18,17 +19,6 @@ interface ConfirmBody {
   width?: number;
   height?: number;
   faces?: DetectedFacePayload[];
-}
-
-function isValidBox(b: BoundingBox | undefined): b is BoundingBox {
-  return (
-    !!b &&
-    [b.x, b.y, b.width, b.height].every(
-      (n) => Number.isFinite(n) && n >= 0 && n <= 1.5
-    ) &&
-    b.width > 0 &&
-    b.height > 0
-  );
 }
 
 /**
@@ -50,9 +40,6 @@ export async function POST(req: NextRequest) {
     await setLinkShared(body.fileId);
 
     const sb = getSupabaseAdmin();
-    const threshold = parseFloat(
-      process.env.NEXT_PUBLIC_FACE_MATCH_THRESHOLD ?? "0.4"
-    );
 
     // 3. Photo row (idempotent on Drive file id).
     let photoId: string;
@@ -83,47 +70,15 @@ export async function POST(req: NextRequest) {
       photoId = inserted.id as string;
     }
 
-    // 4. Faces: match each descriptor against all stored faces per person.
-    const tagged: { name: string; personId: string }[] = [];
-    for (const face of body.faces ?? []) {
-      if (!Array.isArray(face.descriptor) || face.descriptor.length !== 128) continue;
-      if (!isValidBox(face.box)) continue;
+    // 4. Faces: batch-match against pre-photo state, then link/create.
+    const diagnostics = await matchAndLinkFaces(sb, photoId, body.faces ?? []);
+    console.log("upload/confirm matches:", JSON.stringify(diagnostics));
 
-      let personId: string | null = null;
-      let name: string | null = null;
-
-      const { data: matches, error: matchError } = await sb.rpc(
-        "match_person",
-        { q: face.descriptor, max_dist: threshold }
-      );
-      if (matchError) throw new Error(`match_person failed: ${matchError.message}`);
-
-      if (matches && matches.length > 0) {
-        personId = matches[0].person_id as string;
-        name = matches[0].name as string;
-      } else {
-        const { data: person, error: personErr } = await sb
-          .from("people")
-          .insert({ name: "Unknown", descriptor: face.descriptor })
-          .select("id, name")
-          .single();
-        if (personErr) throw new Error(`person insert failed: ${personErr.message}`);
-        personId = person.id as string;
-        name = person.name as string;
-      }
-
-      const { error: faceErr } = await sb.from("photo_faces").insert({
-        photo_id: photoId,
-        person_id: personId,
-        bounding_box: face.box,
-        descriptor: face.descriptor,
-      });
-      if (faceErr) throw new Error(`face insert failed: ${faceErr.message}`);
-
-      tagged.push({ personId, name });
-    }
-
-    return NextResponse.json({ photoId, tagged });
+    return NextResponse.json({
+      photoId,
+      tagged: diagnostics.map((d) => ({ name: d.name, matched: d.matched })),
+      diagnostics,
+    });
   } catch (err) {
     const status = err instanceof DriveError ? err.status : 500;
     console.error("upload/confirm:", err);

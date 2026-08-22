@@ -84,3 +84,21 @@ language sql stable as $$
   order by greatest(similarity(name, query), 0) desc, created_at asc
   limit result_limit;
 $$;
+
+-- ---------- matching v2: top-2 with margin ----------
+-- Returns the two closest people so the app can require a margin between
+-- best and second-best before auto-tagging (prevents wrong merges).
+create or replace function match_person_top2(
+  q vector(128),
+  max_dist float default 0.4
+)
+returns table (person_id uuid, name text, distance float)
+language sql stable as $$
+  select f.person_id, p.name, min(f.descriptor <=> q)::float as distance
+  from photo_faces f
+  join people p on p.id = f.person_id
+  group by f.person_id, p.name
+  having min(f.descriptor <=> q) < max_dist
+  order by distance asc
+  limit 2;
+$$;

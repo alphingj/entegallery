@@ -179,3 +179,50 @@ export async function getFileStream(
   }
   return res;
 }
+
+// ---------- library import ----------
+
+export interface DriveImageItem {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: string;
+  createdTime?: string;
+  imageMediaMetadata?: { width?: number; height?: number };
+}
+
+/**
+ * One page (up to 1000) of image files directly inside a folder.
+ * The caller loops with the returned pageToken until it is null.
+ */
+export async function listFolderImages(
+  folderId: string,
+  pageToken?: string
+): Promise<{ files: DriveImageItem[]; nextPageToken: string | null }> {
+  const token = await getAccessToken();
+  const params = new URLSearchParams({
+    q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
+    pageSize: "1000",
+    orderBy: "createdTime desc",
+    fields:
+      "nextPageToken, files(id,name,mimeType,size,createdTime,imageMediaMetadata(width,height))",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+  });
+  if (pageToken) params.set("pageToken", pageToken);
+
+  const res = await fetch(`${DRIVE_API}/files?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new DriveError(
+      `Drive list failed (${res.status}): ${await res.text()}`,
+      502
+    );
+  }
+  const json = (await res.json()) as {
+    files?: DriveImageItem[];
+    nextPageToken?: string;
+  };
+  return { files: json.files ?? [], nextPageToken: json.nextPageToken ?? null };
+}
