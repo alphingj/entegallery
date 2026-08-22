@@ -9,6 +9,7 @@ export async function GET(req: NextRequest) {
     const kind = req.nextUrl.searchParams.get("kind");
     const status = req.nextUrl.searchParams.get("status") ?? "pending";
     const limit = Math.min(parseInt(req.nextUrl.searchParams.get("limit") ?? "20", 10) || 20, 50);
+    const skipSessionId = req.nextUrl.searchParams.get("skipSessionId");
     // Use explicit FK hints: verification_tasks -> photo_faces (face_a/b) -> photos ; verification_tasks -> people
     // Falls back to second query if embedding returns null (PostgREST alias quirks)
     let q = sb
@@ -20,6 +21,7 @@ export async function GET(req: NextRequest) {
       .order("created_at", { ascending: true })
       .limit(limit);
     if (kind) q = q.eq("kind", kind);
+    if (skipSessionId) q = q.neq("skip_session_id", skipSessionId);
     const { data, error } = await q;
     if (error) throw new Error(error.message);
     // Fallback hydration if face_a is null due to FK name mismatch on older DBs

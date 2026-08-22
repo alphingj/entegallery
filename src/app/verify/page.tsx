@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Nav } from "@/components/nav";
 import { FaceCrop } from "@/components/face-crop";
 import type { FaceItem } from "@/lib/types";
+import Link from "next/link";
 
 type VerifTask = {
   id: string;
@@ -33,7 +34,7 @@ function toFaceItem(face: NonNullable<VerifTask["face_a"]>): FaceItem {
 export default function VerifyPage() {
   const [tasks, setTasks] = useState<VerifTask[]>([]);
   const [loading, setLoading] = useState(true);
-  const [kind, setKind] = useState<"same_person" | "face_name">("face_name");
+  const [kind, setKind] = useState<"same_person" | "face_name" | "bulk" | "swipe">("face_name");
 
   const load = async () => {
     setLoading(true);
@@ -47,9 +48,7 @@ export default function VerifyPage() {
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind]);
 
   const decide = async (id: string, decision: "yes" | "no") => {
@@ -76,12 +75,38 @@ export default function VerifyPage() {
       <main className="mx-auto max-w-3xl px-4 py-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-semibold">Verify faces</h1>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setKind("face_name")} className={kind === "face_name" ? "bg-secondary" : ""}>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setKind("face_name")}
+              className={kind === "face_name" ? "bg-secondary" : ""}
+            >
               Face = Name?
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setKind("same_person")} className={kind === "same_person" ? "bg-secondary" : ""}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setKind("same_person")}
+              className={kind === "same_person" ? "bg-secondary" : ""}
+            >
               Same person?
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setKind("bulk")}
+              className={kind === "bulk" ? "bg-secondary" : ""}
+            >
+              Bulk Name Entry
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setKind("swipe")}
+              className={kind === "swipe" ? "bg-secondary" : ""}
+            >
+              Swipe Validation
             </Button>
             <Button variant="outline" onClick={generate} size="sm">
               Generate tasks
@@ -91,12 +116,30 @@ export default function VerifyPage() {
         <p className="mb-4 text-sm text-muted-foreground">
           {kind === "face_name"
             ? "Is this face really this person? Uses glintr100 512d (0.30 threshold)."
-            : "Are these two photos the same person?"}
+            : kind === "same_person"
+            ? "Are these two photos the same person?"
+            : kind === "bulk"
+            ? "Enter names for groups of unknown faces. Click Confirm to assign, Reject to keep as Unknown, or Skip to defer."
+            : "Swipe through faces to confirm or correct identifications. Skip defers to next session."}
         </p>
         {loading ? (
           <p className="text-sm">Loading...</p>
         ) : tasks.length === 0 ? (
           <p className="text-sm text-muted-foreground">No pending tasks. Click Generate to create from ambiguous Unknowns.</p>
+        ) : kind === "bulk" ? (
+          <div className="text-center py-12">
+            <p className="text-sm text-muted-foreground">Bulk Name Entry page - implementation pending</p>
+            <Button variant="outline" onClick={() => setKind("face_name")} size="sm">
+              Back to Face = Name
+            </Button>
+          </div>
+        ) : kind === "swipe" ? (
+          <div className="text-center py-12">
+            <p className="text-sm text-muted-foreground">Swipe Validation page - implementation pending</p>
+            <Button variant="outline" onClick={() => setKind("face_name")} size="sm">
+              Back to Face = Name
+            </Button>
+          </div>
         ) : (
           <div className="space-y-4">
             {tasks.map((t) => (
