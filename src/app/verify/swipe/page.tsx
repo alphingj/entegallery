@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { Nav } from "@/components/nav";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -135,7 +137,14 @@ export default function SwipePage() {
       <Nav active="verify" />
       <main className="mx-auto max-w-2xl px-4 py-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">Swipe Validation</h1>
+          <div className="flex items-center gap-3">
+            <Button asChild variant="ghost" size="sm" className="min-h-9">
+              <Link href="/verify">
+                <ArrowLeft className="mr-1.5 size-4" /> Back
+              </Link>
+            </Button>
+            <h1 className="text-xl font-semibold">Swipe Validation</h1>
+          </div>
           <div className="flex gap-2">
             <Button
               variant="outline"

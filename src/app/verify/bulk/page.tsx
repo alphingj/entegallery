@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { Nav } from "@/components/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,7 +124,14 @@ export default function BulkVerifyPage() {
       <Nav active="verify" />
       <main className="mx-auto max-w-5xl px-4 py-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">Bulk Name Entry</h1>
+          <div className="flex items-center gap-3">
+            <Button asChild variant="ghost" size="sm" className="min-h-9">
+              <Link href="/verify">
+                <ArrowLeft className="mr-1.5 size-4" /> Back
+              </Link>
+            </Button>
+            <h1 className="text-xl font-semibold">Bulk Name Entry</h1>
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">
               {groups.reduce((sum, g) => sum + g.faceCount, 0)} faces in {groups.length} group{groups.length !== 1 ? "s" : ""}
