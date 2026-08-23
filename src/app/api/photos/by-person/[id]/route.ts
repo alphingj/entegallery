@@ -35,7 +35,7 @@ export async function GET(
     const { data, error } = await sb
       .from("photo_faces")
       .select(
-        "id, bounding_box, created_at, photo_id, photos(google_drive_file_id, file_name, thumbnail_url, created_at)"
+        "id, bounding_box, created_at, photo_id, photos(google_drive_file_id, file_name, thumbnail_url, width, height, created_at)"
       )
       .eq("person_id", id)
       .order("created_at", { ascending: false })

@@ -10,13 +10,10 @@ import { Lightbox } from "@/components/lightbox";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { isHeic } from "@/lib/heic";
 
 function isHeicItem(p: { mime_type: string | null; file_name: string | null }) {
-  return (
-    p.mime_type === "image/heic" ||
-    p.mime_type === "image/heif" ||
-    /\.(heic|heif)$/i.test(p.file_name ?? "")
-  );
+  return isHeic(p.mime_type, p.file_name);
 }
 
 /**

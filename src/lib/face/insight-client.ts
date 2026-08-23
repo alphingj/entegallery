@@ -2,8 +2,10 @@
 
 import type { BoundingBox } from "@/lib/types";
 
-// InsightFace buffalo_sc via onnxruntime-web (w600k_mbf = 512d ArcFace, MobileFaceNet)
-// Detection still uses face-api SSD (proven) -> recognition via ONNX for 512d.
+// InsightFace via onnxruntime-web (w600k_mbf = 512d ArcFace, MobileFaceNet = 13MB)
+// Detection uses face-api SSD (proven) -> recognition via ONNX for 512d.
+// Model is bundled locally at /models/insight/w600k_mbf.onnx (13MB, under Vercel 100MB limit).
+// If /models/insight/glintr100.onnx exists locally (user-placed 250MB), it is tried first.
 
 type FaceApi = typeof import("@vladmandic/face-api");
 
@@ -40,81 +42,47 @@ async function loadDetection(): Promise<FaceApi> {
 }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function loadRecognition(): Promise<any> {
+  async function loadRecognition(): Promise<any> {
   if (!ortSessionPromise) {
     ortSessionPromise = (async () => {
       const ort = await import("onnxruntime-web");
-      // Use CDN for wasm binaries — avoids copying to public/ort-wasm
       try {
         ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
-        // Single thread avoids needing COOP/COEP headers (which would break Drive thumbnails)
-        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.numThreads = 1; // single thread avoids COOP/COEP headers
       } catch {
         /* ignore */
       }
-      // Try glintr100 250MB from external CDNs (stays under Vercel Free 100MB limit), fallback to local w600k_mbf 13MB
-      const CANDIDATES = [
-        "https://huggingface.co/deepinsight/insightface/resolve/main/models/antelopev2/glintr100.onnx",
-        "https://cdn.jsdelivr.net/gh/deepinsight/insightface-zoo@main/models/antelopev2/glintr100.onnx",
-        "https://github.com/deepinsight/insightface/releases/download/v0.7/antelopev2.zip",
+
+      // Prefer local glintr100 if user placed it (250MB, better accuracy), else w600k_mbf 13MB
+      const localCandidates = [
+        "/models/insight/glintr100.onnx",
+        "/models/insight/w600k_mbf.onnx",
       ];
-      const CACHE_NAME = "insight-models-v1";
       let modelBuffer: ArrayBuffer | null = null;
-      let lastErr: unknown = null;
-      for (const MODEL_URL of CANDIDATES) {
+      let modelName = "";
+      for (const url of localCandidates) {
         try {
-          const isZip = MODEL_URL.endsWith(".zip");
-          // try cache first
-          try {
-            const cache = await caches.open(CACHE_NAME);
-            const cached = await cache.match(MODEL_URL);
-            if (cached) {
-              modelBuffer = await cached.arrayBuffer();
-              console.log(`[insight] cache hit ${MODEL_URL} ${(modelBuffer.byteLength / 1e6).toFixed(1)}MB`);
-              break;
-            }
-          } catch {
-            /* cache not available */
-          }
-          console.log(`[insight] fetching ${MODEL_URL} ...`);
-          const res = await fetch(MODEL_URL);
-          if (!res.ok) throw new Error(`model fetch ${res.status} ${MODEL_URL}`);
-          if (isZip) {
-            // antelopev2.zip contains glintr100.onnx — extract via JSZip
-            const JSZip = (await import("jszip")).default;
-            const zipBuf = await res.arrayBuffer();
-            const zip = await JSZip.loadAsync(zipBuf);
-            const entry = Object.keys(zip.files).find((k) => k.endsWith("glintr100.onnx"));
-            if (!entry) throw new Error("glintr100.onnx not in zip");
-            modelBuffer = await zip.files[entry].async("arraybuffer");
-          } else {
-            try {
-              const cache = await caches.open(CACHE_NAME);
-              await cache.put(MODEL_URL, res.clone());
-            } catch {
-              /* ignore cache put failure */
-            }
-            modelBuffer = await res.arrayBuffer();
-          }
-          console.log(`[insight] fetched ${(modelBuffer.byteLength / 1e6).toFixed(1)}MB from ${MODEL_URL}`);
+          console.log(`[insight] trying ${url} ...`);
+          const res = await fetch(url, { cache: "force-cache" });
+          if (!res.ok) continue;
+          // sanity: must be big enough to be an ONNX model
+          const buf = await res.arrayBuffer();
+          if (buf.byteLength < 1_000_000) continue; // <1MB is a 404 html page
+          modelBuffer = buf;
+          modelName = url.split("/").pop() ?? url;
+          console.log(`[insight] loaded ${modelName} ${(buf.byteLength / 1e6).toFixed(1)}MB`);
           break;
-        } catch (e) {
-          console.warn(`[insight] fetch failed for candidate`, e);
-          lastErr = e;
+        } catch {
           continue;
         }
       }
-      if (!modelBuffer) {
-        console.warn("[insight] all glintr100 candidates failed, falling back to local w600k_mbf 13MB", lastErr);
-        const res = await fetch("/models/insight/w600k_mbf.onnx");
-        if (!res.ok) throw new Error(`fallback w600k_mbf fetch ${res.status}`);
-        modelBuffer = await res.arrayBuffer();
-      }
+      if (!modelBuffer) throw new Error("No face recognition model found at /models/insight/(glintr100|w600k_mbf).onnx — run pnpm models && check public/models/insight/");
+
       const session = await ort.InferenceSession.create(new Uint8Array(modelBuffer), {
         executionProviders: ["wasm"],
         graphOptimizationLevel: "all",
       });
-      console.log(`[insight] model loaded ${(modelBuffer.byteLength / 1e6).toFixed(1)}MB, inputs: ${session.inputNames.join(",")}`);
+      console.log(`[insight] session ready (${modelName}) inputs: ${session.inputNames.join(",")} outputs: ${session.outputNames.join(",")}`);
       return session;
     })().catch((e) => {
       ortSessionPromise = null;
@@ -166,11 +134,11 @@ function squarify(box: { x: number; y: number; width: number; height: number }, 
   };
 }
 
-/** Crop a face box (pixel coords on `canvas`) into a 112x112 canvas, with 20% margin. */
+/** Crop a face box (pixel coords on `canvas`) into a 112x112 canvas, with 30% margin. */
 function cropFace112(canvas: HTMLCanvasElement, box: { x: number; y: number; width: number; height: number }): HTMLCanvasElement {
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
-  const size = Math.max(box.width, box.height) * 1.3; // 30% margin for better alignment
+  const size = Math.max(box.width, box.height) * 1.3;
   const x0 = Math.max(0, Math.round(cx - size / 2));
   const y0 = Math.max(0, Math.round(cy - size / 2));
   const s = Math.min(size, Math.min(canvas.width - x0, canvas.height - y0));
@@ -186,17 +154,15 @@ function canvasToNCHW112(canvas: HTMLCanvasElement): Float32Array {
   const ctx = canvas.getContext("2d")!;
   const { data } = ctx.getImageData(0, 0, 112, 112);
   const chw = new Float32Array(1 * 3 * 112 * 112);
-  // Normalize to [-1, 1] as InsightFace expects (mean 127.5, std 127.5), NCHW, RGB order
   let p = 0;
   for (let c = 0; c < 3; c++) {
     for (let y = 0; y < 112; y++) {
       for (let x = 0; x < 112; x++) {
-        const idx = (y * 112 + x) * 4 + c; // data is RGBA
+        const idx = (y * 112 + x) * 4 + c;
         chw[p++] = (data[idx] - 127.5) / 127.5;
       }
     }
   }
-  // onnxruntime expects RGB; canvas data is RGBA, we already read R,G,B per c
   return chw;
 }
 
@@ -240,7 +206,6 @@ export async function detectFaces(blob: Blob): Promise<{ faces: DetectedFace[]; 
     const results = await session.run(feeds);
     const outName = session.outputNames[0];
     const embedding = results[outName].data as Float32Array;
-    // glintr100 outputs 512d, already L2-ish but normalize for cosine
     const descriptor = l2normalize(embedding as unknown as Float32Array);
 
     faces.push({
@@ -252,5 +217,4 @@ export async function detectFaces(blob: Blob): Promise<{ faces: DetectedFace[]; 
   return { faces, width: prepared.naturalWidth, height: prepared.naturalHeight };
 }
 
-// Keep old name for compatibility with import-runner
 export const loadFaceApi = loadDetection;

@@ -1,68 +1,86 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { parseDescriptor } from "@/lib/cosine";
 
 export const maxDuration = 60;
-
-interface Decision {
-  faceId: string;
-  decision: "confirm" | "reject" | "skip";
-  correctPersonId?: string;
-  newName?: string;
-}
 
 export async function POST(req: NextRequest) {
   try {
     const sb = getSupabaseAdmin();
-    const { decisions } = await req.json() as { decisions: Array<{ faceId: string; decision: "confirm" | "reject" | "skip"; correctPersonId?: string; newName?: string }> };
+    const { decisions } = (await req.json()) as {
+      decisions: Array<{ faceId: string; decision: "confirm" | "reject" | "skip"; correctPersonId?: string; newName?: string }>;
+    };
 
     if (!decisions || !Array.isArray(decisions) || decisions.length === 0) {
       return NextResponse.json({ error: "decisions array required" }, { status: 400 });
     }
 
-    let processed = 0;
+    // For bulk "confirm" with newName, we need to create a person once and reuse it for all faces in that batch.
+    // Group by newName so all faces with same newName go to same new person.
+    const newNameToPersonId = new Map<string, string>();
 
+    let processed = 0;
     for (const item of decisions) {
       const { faceId, decision, correctPersonId, newName } = item;
+      if (!faceId || !["confirm", "reject", "skip"].includes(decision)) continue;
 
-      if (!faceId || !["confirm", "reject", "skip"].includes(decision)) {
-        continue;
-      }
-
-      // Get the verification task for this face
-      const { data: task, error: taskErr } = await getSupabaseAdmin()
+      // Try to find a pending verification task for this face (if exists, update it; if not, operate directly on photo_faces)
+      const { data: task } = await sb
         .from("verification_tasks")
         .select("id, kind, face_a_id, face_b_id, person_id")
         .eq("face_a_id", faceId)
         .eq("status", "pending")
         .maybeSingle();
 
-      if (taskErr || !task) continue;
-
       if (decision === "confirm") {
-        if (task.kind === "face_name") {
-          // Confirm the suggested person
-          await sb.from("photo_faces").update({ person_id: task.person_id }).eq("id", task.face_a_id);
-        } else if (task.kind === "same_person") {
-          // For same_person, merge face_b into face_a's person
-          const { data: faceB } = await getSupabaseAdmin().from("photo_faces").select("person_id").eq("id", task.face_b_id).single();
-          if (faceB) {
-            await sb.from("photo_faces").update({ person_id: task.person_id }).eq("person_id", faceB.person_id);
+        let targetPersonId: string | null = null;
+
+        if (correctPersonId) {
+          targetPersonId = correctPersonId;
+        } else if (newName?.trim()) {
+          const key = newName.trim().toLowerCase();
+          if (newNameToPersonId.has(key)) {
+            targetPersonId = newNameToPersonId.get(key)!;
+          } else {
+            // Create new person from this face's descriptor
+            const { data: face } = await sb.from("photo_faces").select("descriptor").eq("id", faceId).single();
+            const vec = parseDescriptor(face?.descriptor);
+            if (!vec) continue;
+            const { data: person, error } = await sb.from("people").insert({ name: newName.trim(), descriptor: vec }).select("id").single();
+            if (error || !person) continue;
+            targetPersonId = person.id as string;
+            newNameToPersonId.set(key, targetPersonId);
           }
+        } else if (task?.person_id) {
+          targetPersonId = task.person_id as string;
         }
-        await sb.from("verification_tasks").update({ status: "confirmed", resolved_at: new Date().toISOString() }).eq("id", task.id);
+
+        if (targetPersonId) {
+          await sb.from("photo_faces").update({ person_id: targetPersonId }).eq("id", faceId);
+        }
+
+        if (task) {
+          await sb.from("verification_tasks").update({ status: "confirmed", resolved_at: new Date().toISOString() }).eq("id", task.id);
+        }
       } else if (decision === "reject") {
-        // Reject - mark as rejected, keep as Unknown
-        await sb.from("verification_tasks").update({ status: "rejected", resolved_at: new Date().toISOString() }).eq("id", task.id);
+        if (task) {
+          await sb.from("verification_tasks").update({ status: "rejected", resolved_at: new Date().toISOString() }).eq("id", task.id);
+        }
+        // No photo_faces change — keep as Unknown
       } else if (decision === "skip") {
-        // Skip - mark with a session ID so it won't appear again in this session
-        const skipSessionId = `skip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        await sb.from("verification_tasks").update({ status: "skipped", resolved_at: new Date().toISOString(), skip_session_id: `skip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` }).eq("id", task.id);
+        if (task) {
+          await sb
+            .from("verification_tasks")
+            .update({ status: "skipped", resolved_at: new Date().toISOString(), skip_session_id: `skip_${Date.now()}_${Math.random().toString(36).slice(2, 9)}` })
+            .eq("id", task.id);
+        }
+        // For bulk faces with no task, skip is a no-op (they'll just be filtered next time if we wanted, but they weren't tasked anyway)
       }
 
       processed++;
     }
 
-    return NextResponse.json({ processed });
+    return NextResponse.json({ ok: true, processed });
   } catch (err) {
     console.error("bulk-decide error:", err);
     return NextResponse.json({ error: err instanceof Error ? err.message : "failed" }, { status: 500 });

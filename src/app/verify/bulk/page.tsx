@@ -1,282 +1,121 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Nav } from "@/components/nav";
-import { FaceCrop } from "@/components/face-crop";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { bulkDecide, fetchBulkPending, type BulkGroup } from "@/lib/api-client";
+import { fetchPeople, type PersonSummary } from "@/lib/api-client";
 
-function PersonAutocomplete({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [show, setShow] = useState(false);
-
-  useEffect(() => {
-    if (!value || value.length < 2) {
-      setSuggestions([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const r = await fetch(`/api/people?q=${encodeURIComponent(value)}`);
-        const j = await r.json();
-        setSuggestions(j.people?.map((p: { name: string }) => p.name) ?? []);
-      } catch {}
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [value]);
-
-  return (
-    <div className="relative">
-      <Input
-        value={value}
-        onChange={(e) => { onChange(e.target.value); setShow(true); }}
-        onFocus={() => setShow(true)}
-        onBlur={() => setTimeout(() => setShow(false), 200)}
-        placeholder="Type name..."
-        disabled={disabled}
-      />
-      {show && suggestions.length > 0 && (
-        <div className="absolute z-10 w-full mt-1 rounded-md border bg-popover p-1 shadow-lg max-h-40 overflow-y-auto">
-          {suggestions.map((name) => (
-            <button
-              key={name}
-              onClick={() => { onChange(name); setShow(false); }}
-              className="w-full px-2 py-1 text-sm hover:bg-accent text-left"
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BulkGroupCard({ 
-  group, 
-  onConfirm, 
-  onReject, 
-  onSkip 
-}: { 
-  group: { 
-    personId: string | null; 
-    personName: string; 
-    faceCount: number; 
-    representativeFace: {
-      faceId: string;
-      thumbnailUrl: string | null;
-      box: { x: number; y: number; width: number; height: number };
-      width: number | null;
-      height: number | null;
-    };
-    faces: Array<{
-      faceId: string;
-      thumbnailUrl: string | null;
-      box: { x: number; y: number; width: number; height: number };
-      width: number | null;
-      height: number | null;
-    }>;
+type BulkGroup = {
+  personId: string | null;
+  personName: string;
+  faceCount: number;
+  representativeFace: {
+    faceId: string;
+    thumbnailUrl: string | null;
+    box: { x: number; y: number; width: number; height: number };
+    width: number | null;
+    height: number | null;
   };
-  onConfirm: (personId: string | null, newName?: string) => void;
-  onReject: () => void;
-  onSkip: () => void;
-}) {
-  const [mode, setMode] = useState<"new" | "existing">("new");
-  const [newName, setNewName] = useState("");
-  const [selectedPersonId, setSelectedPersonId] = useState<string>("");
-
-  return (
-    <div className="rounded-xl border p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-muted">
-            <img 
-              src={group.representativeFace.thumbnailUrl ?? "/placeholder.jpg"} 
-              alt={group.personName} 
-              className="w-full h-full object-cover"
-            />
-          </div>
-          <div>
-            <p className="font-medium text-sm">{group.personName || "New Person"}</p>
-            <p className="text-xs text-muted-foreground">{group.faceCount} photo{group.faceCount !== 1 ? "s" : ""}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setMode("existing")}
-            className={`px-3 py-1.5 text-sm rounded-md border ${
-              group.personId ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
-            }`}
-            disabled={false}
-          >
-            Add to existing
-          </button>
-          <button
-            onClick={() => setMode("new")}
-            className="px-3 py-1.5 text-sm rounded-md border"
-          >
-            New person
-          </button>
-        </div>
-
-        {mode === "existing" && (
-          <select
-            value={selectedPersonId}
-            onChange={(e) => setSelectedPersonId(e.target.value)}
-            className="w-full rounded-md border p-2 text-sm"
-            disabled={false}
-          >
-            <option value="">Select existing person...</option>
-            {/* This would be populated from an API call in a real implementation */}
-          </select>
-        )}
-
-        {mode === "new" && (
-          <Input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Enter new name"
-            autoFocus
-          />
-        )}
-
-        <div className="flex gap-2 pt-2">
-          <Button variant="destructive" size="sm" onClick={() => onSkip()} className="flex-1">
-            Skip
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => onReject()} className="flex-1">
-            Reject
-          </Button>
-          <Button size="sm" onClick={() => onConfirm(mode === "existing" ? selectedPersonId || null : null, mode === "new" ? newName : undefined)} className="flex-1 bg-primary text-primary-foreground">
-            {group.personId ? "Confirm" : "Create & Confirm"}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
+  faces: Array<{
+    faceId: string;
+    thumbnailUrl: string | null;
+    box: { x: number; y: number; width: number; height: number };
+    width: number | null;
+    height: number | null;
+  }>;
+};
 
 export default function BulkVerifyPage() {
-  const router = useRouter();
-  const [groups, setGroups] = useState<{ 
-    personId: string | null; 
-    personName: string; 
-    faceCount: number; 
-    representativeFace: {
-      faceId: string;
-      thumbnailUrl: string | null;
-      box: { x: number; y: number; width: number; height: number };
-      width: number | null;
-      height: number | null;
-    };
-    faces: Array<{
-      faceId: string;
-      thumbnailUrl: string | null;
-      box: { x: number; y: number; width: number; height: number };
-      width: number | null;
-      height: number | null;
-    }>;
-  }[]>([]);
+  const [groups, setGroups] = useState<BulkGroup[]>([]);
+  const [people, setPeople] = useState<PersonSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [skipSessionId] = useState(() => `skip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [newNames, setNewNames] = useState<Record<string, string>>({});
+  const [pickPerson, setPickPerson] = useState<Record<string, string>>({});
 
   const load = async () => {
+    setLoading(true);
     try {
-      const res = await fetch("/api/verification/bulk-pending?limit=200");
-      const data = await res.json();
-      setGroups(data.groups || []);
+      const [bulkRes, peopleRes] = await Promise.all([
+        fetch("/api/verification/bulk-pending?limit=200").then((r) => r.json()),
+        fetchPeople().catch(() => ({ people: [] as PersonSummary[] })),
+      ]);
+      setGroups(bulkRes.groups || []);
+      setPeople((peopleRes as { people: PersonSummary[] }).people ?? []);
     } catch (err) {
       console.error(err);
+      toast.error("Failed to load");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    void load();
+  }, []);
 
-  const handleConfirm = async (group: typeof groups[0], newName?: string) => {
-    const decisions = group.faces.map(face => ({
-      faceId: face.faceId,
-      decision: "confirm" as const,
-      correctPersonId: group.personId || undefined,
-      newName: group.personId ? undefined : newName
-    }));
+  const groupKey = (g: BulkGroup) => g.personId ?? `new_${g.faces[0]?.faceId ?? "unknown"}`;
 
-    try {
-      await fetch("/api/verification/bulk-decide", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decisions })
-      });
-      toast.success(`Confirmed ${group.faceCount} face${group.faceCount > 1 ? "s" : ""}`);
-      setGroups(prev => prev.filter(g => g !== group));
-    } catch (err) {
-      toast.error("Failed to confirm");
+  const handleDecision = async (group: BulkGroup, decision: "confirm" | "reject" | "skip", opts?: { personId?: string | null; newName?: string }) => {
+    const key = groupKey(group);
+    setSavingId(key);
+    const decisions = group.faces.map((face) => {
+      if (decision === "confirm") {
+        const pid = opts?.personId ?? group.personId ?? undefined;
+        const nn = !pid ? (opts?.newName ?? newNames[key] ?? undefined) : undefined;
+        if (!pid && !nn?.trim()) return null;
+        return { faceId: face.faceId, decision: "confirm" as const, correctPersonId: pid ?? undefined, newName: nn?.trim() || undefined };
+      }
+      return { faceId: face.faceId, decision };
+    }).filter(Boolean) as { faceId: string; decision: "confirm" | "reject" | "skip"; correctPersonId?: string; newName?: string }[];
+
+    if (decisions.length === 0) {
+      toast.error(decision === "confirm" ? "Enter a name or pick a person" : "No faces");
+      setSavingId(null);
+      return;
     }
-  };
-
-  const handleReject = async (group: typeof groups[0]) => {
-    const decisions = group.faces.map(face => ({
-      faceId: face.faceId,
-      decision: "reject" as const
-    }));
 
     try {
-      await fetch("/api/verification/bulk-decide", {
+      const res = await fetch("/api/verification/bulk-decide", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decisions })
+        body: JSON.stringify({ decisions }),
       });
-      toast.success(`Rejected ${group.faceCount} face${group.faceCount > 1 ? "s" : ""}`);
-      setGroups(prev => prev.filter(g => g !== group));
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? "failed");
+      toast.success(`${decision === "confirm" ? "Confirmed" : decision === "reject" ? "Rejected" : "Skipped"} ${group.faceCount} face${group.faceCount > 1 ? "s" : ""}`);
+      setGroups((prev) => prev.filter((g) => groupKey(g) !== key));
     } catch (err) {
-      toast.error("Failed to reject");
-    }
-  };
-
-const handleSkip = async (group: typeof groups[0]) => {
-    const decisions = group.faces.map(face => ({
-      faceId: face.faceId,
-      decision: "skip" as const,
-    }));
-
-    try {
-      await fetch("/api/verification/bulk-decide", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decisions })
-      });
-      toast.success(`Skipped ${group.faceCount} face${group.faceCount > 1 ? "s" : ""}`);
-      setGroups(prev => prev.filter(g => g !== group));
-    } catch (err) {
-      toast.error("Failed to skip");
+      toast.error(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setSavingId(null);
     }
   };
 
   const runGenerate = async () => {
     setLoading(true);
     try {
-      await fetch("/api/verification/generate", {
+      const res = await fetch("/api/verification/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ faceNameLimit: 50, samePersonLimit: 30 }),
       });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? "generate failed");
+      toast.success(`Generated ${j.createdFaceName ?? 0} + ${j.createdSamePerson ?? 0} tasks`);
       await load();
     } catch (err) {
       console.error(err);
-      toast.error("Failed to generate tasks");
+      toast.error(err instanceof Error ? err.message : "Failed to generate");
     } finally {
       setLoading(false);
     }
   };
+
+  const namedPeople = people.filter((p) => p.name !== "Unknown");
 
   return (
     <>
@@ -307,7 +146,7 @@ const handleSkip = async (group: typeof groups[0]) => {
           <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
             <h2 className="text-lg font-semibold">No faces to identify</h2>
             <p className="text-sm text-muted-foreground max-w-sm">
-              All faces have been identified or there are no new faces to process.
+              All faces have been identified or there are no new faces to process. Tap Generate to group Unknowns by best match.
             </p>
             <div className="flex gap-2 mt-4">
               <Button onClick={runGenerate} disabled={loading} size="sm">
@@ -319,50 +158,116 @@ const handleSkip = async (group: typeof groups[0]) => {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-            {groups.map((group) => (
-              <div 
-                key={group.personId || `new_${group.faces[0].faceId}`}
-                className="group relative overflow-hidden rounded-lg border bg-card bg-white/5"
-              >
-                <div className="relative aspect-square overflow-hidden bg-muted">
-                  <img
-                    src={group.representativeFace.thumbnailUrl || "/placeholder.jpg"}
-                    alt={group.personName}
-                    className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-end justify-center p-2">
-                    <div className="flex gap-1 w-full justify-center">
-                      <button
-                        onClick={() => handleConfirm(group)}
-                        className="px-3 py-1.5 text-xs font-medium rounded-full bg-green-600 text-white hover:bg-green-700 transition-colors"
-                      >
-                        Confirm
-                      </button>
-                      <button
-                        onClick={() => handleReject(group)}
-                        className="px-3 py-1.5 text-xs font-medium rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors"
-                      >
-                        Reject
-                      </button>
-                      <button
-                        onClick={() => handleSkip(group)}
-                        className="px-3 py-1.5 text-xs font-medium rounded-full bg-gray-600 text-white hover:bg-gray-700 transition-colors"
-                      >
-                        Skip
-                      </button>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {groups.map((group) => {
+              const key = groupKey(group);
+              const isNew = !group.personId;
+              const busy = savingId === key;
+              return (
+                <div key={key} className="rounded-xl border p-4 space-y-3 bg-card">
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-muted shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={group.representativeFace.thumbnailUrl ?? "/placeholder.jpg"}
+                        alt={group.personName}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm truncate">{group.personName || "New Person"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {group.faceCount} photo{group.faceCount !== 1 ? "s" : ""} · best match {isNew ? "none" : "found"}
+                      </p>
                     </div>
                   </div>
-                </div>
-                <div className="p-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium truncate">{group.personName || "New Person"}</p>
-                    <span className="text-xs text-muted-foreground">{group.faceCount} photo{group.faceCount > 1 ? "s" : ""}</span>
+
+                  {isNew ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={newNames[key] ?? ""}
+                        onChange={(e) => setNewNames((m) => ({ ...m, [key]: e.target.value }))}
+                        placeholder="Enter name for this group"
+                        disabled={busy}
+                      />
+                      {namedPeople.length > 0 && (
+                        <Select value={pickPerson[key] ?? ""} onValueChange={(v) => setPickPerson((m) => ({ ...m, [key]: v }))}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Or pick existing person…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {namedPeople.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.name} · {p.photoCount} photos
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Will assign to <span className="font-medium text-foreground">{group.personName}</span>
+                      {namedPeople.length > 1 && " · or pick another below"}
+                    </p>
+                  )}
+
+                  {!isNew && namedPeople.length > 0 && (
+                    <Select value={pickPerson[key] ?? ""} onValueChange={(v) => setPickPerson((m) => ({ ...m, [key]: v }))}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={`Keep as ${group.personName} or reassign…`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={group.personId!}>{group.personName} (suggested)</SelectItem>
+                        {namedPeople
+                          .filter((p) => p.id !== group.personId)
+                          .map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name} · {p.photoCount} photos
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() =>
+                        handleDecision(group, "confirm", {
+                          personId: pickPerson[key] || group.personId,
+                          newName: !pickPerson[key] && isNew ? newNames[key] : undefined,
+                        })
+                      }
+                      className="flex-1"
+                    >
+                      Confirm
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => handleDecision(group, "reject")} className="flex-1">
+                      Reject
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => handleDecision(group, "skip")} className="flex-1">
+                      Skip
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {group.faces.slice(0, 6).map((f) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={f.faceId}
+                        src={f.thumbnailUrl ?? "/placeholder.jpg"}
+                        alt=""
+                        className="size-8 rounded object-cover border"
+                        loading="lazy"
+                      />
+                    ))}
+                    {group.faces.length > 6 && <span className="text-xs text-muted-foreground self-center">+{group.faces.length - 6}</span>}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
