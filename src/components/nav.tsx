@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { BadgeCheck, FileImage, Images, Menu, Search, Users, X } from "lucide-react";
+import { FileImage, Images, Menu, Search, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 export function Nav({
   active,
 }: {
-  active: "photos" | "heic" | "people" | "verify";
+  active: "photos" | "heic" | "people";
 }) {
   const router = useRouter();
   const [q, setQ] = useState("");
@@ -64,14 +64,6 @@ export function Nav({
               >
                 <Link href="/people"><Users className="size-4" /> People</Link>
               </Button>
-              <Button
-                asChild
-                variant="ghost"
-                className={cn("justify-start min-h-11", active === "verify" && "bg-secondary")}
-                onClick={() => setMenuOpen(false)}
-              >
-                <Link href="/verify"><BadgeCheck className="size-4" /> Verify</Link>
-              </Button>
             </nav>
           </SheetContent>
         </Sheet>
@@ -107,14 +99,6 @@ export function Nav({
             className={cn("min-h-9", active === "people" && "bg-secondary")}
           >
             <Link href="/people"><Users className="size-4" /> People</Link>
-          </Button>
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className={cn("min-h-9", active === "verify" && "bg-secondary")}
-          >
-            <Link href="/verify"><BadgeCheck className="size-4" /> Verify</Link>
           </Button>
         </nav>
 
