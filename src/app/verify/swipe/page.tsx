@@ -25,7 +25,9 @@ export default function SwipePage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/verification/swipe-pending?skipSessionId=${encodeURIComponent(skipSessionId)}&limit=100`);
+      const res = await fetch(
+        `/api/verification/swipe-pending?skipSessionId=${encodeURIComponent(skipSessionId)}&limit=100&kind=${mode}`
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "failed to load");
       setPeople(data.people || []);
@@ -62,7 +64,7 @@ export default function SwipePage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [mode]);
 
   const flatTasks = people.flatMap((p) => p.tasks.map((t) => ({ ...t, personId: p.personId, personName: p.personName })));
   const currentTask = flatTasks[currentIndex];

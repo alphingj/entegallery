@@ -7,18 +7,27 @@ export async function GET(req: NextRequest) {
   try {
     const sb = getSupabaseAdmin();
     const skipSessionId = req.nextUrl.searchParams.get("skipSessionId");
+    const kind = req.nextUrl.searchParams.get("kind") ?? "face_name";
     const limit = Math.min(parseInt(req.nextUrl.searchParams.get("limit") ?? "20", 10) || 20, 100);
+
+    // For same_person, person_id is null and we need face_b as well
+    const isSamePerson = kind === "same_person";
+    const select = isSamePerson
+      ? `*, face_a:photo_faces!verification_tasks_face_a_id_fkey(id,bounding_box,photo_id,photos!inner(thumbnail_url,file_name,google_drive_file_id,width,height)), face_b:photo_faces!verification_tasks_face_b_id_fkey(id,bounding_box,photo_id,photos!inner(thumbnail_url,file_name,google_drive_file_id,width,height))`
+      : `*, face_a:photo_faces!verification_tasks_face_a_id_fkey(id,bounding_box,photo_id,photos!inner(thumbnail_url,file_name,google_drive_file_id,width,height)), person:people!verification_tasks_person_id_fkey(id,name)`;
 
     let q = getSupabaseAdmin()
       .from("verification_tasks")
-      .select(
-        `*, face_a:photo_faces!verification_tasks_face_a_id_fkey(id,bounding_box,photo_id,photos!inner(thumbnail_url,file_name,google_drive_file_id,width,height)), person:people!verification_tasks_person_id_fkey(id,name)`
-      )
+      .select(select)
       .eq("status", "pending")
-      .eq("kind", "face_name")
-      .not("person_id", "is", null)
+      .eq("kind", kind)
       .order("created_at", { ascending: true })
       .limit(limit);
+
+    if (!isSamePerson) {
+      // face_name tasks must have a suggested person
+      q = q.not("person_id", "is", null);
+    }
 
     // Filter out tasks that have been skipped in this session
     if (skipSessionId) {
@@ -28,7 +37,69 @@ export async function GET(req: NextRequest) {
     const { data, error } = await q;
     if (error) throw new Error(error.message);
 
-    // Group tasks by person_id
+    if (isSamePerson) {
+      // same_person: each task is a pair (A vs B) — return one "person" per task for the swipe UI to render as pair
+      const spTasks = (data ?? []) as Array<{
+        id: string;
+        face_a_id: string;
+        face_b_id: string;
+        best_distance: number | null;
+        face_a: {
+          id: string;
+          bounding_box: { x: number; y: number; width: number; height: number };
+          photo_id: string;
+          photos: { google_drive_file_id: string; thumbnail_url: string | null; file_name: string | null; width: number | null; height: number | null };
+        };
+        face_b: {
+          id: string;
+          bounding_box: { x: number; y: number; width: number; height: number };
+          photo_id: string;
+          photos: { google_drive_file_id: string; thumbnail_url: string | null; file_name: string | null; width: number | null; height: number | null };
+        };
+      }>;
+
+      type SwipeTaskPair = {
+        taskId: string;
+        faceId: string;
+        boundingBox: { x: number; y: number; width: number; height: number };
+        photoId: string;
+        thumbnailUrl: string | null;
+        fileName: string | null;
+        googleDriveFileId: string;
+        bestDistance: number | null;
+        width: number | null;
+        height: number | null;
+        pairFaceId?: string;
+        pairBoundingBox?: { x: number; y: number; width: number; height: number };
+        pairThumbnailUrl?: string | null;
+      };
+
+      const people: Array<{ personId: string; personName: string; faceCount: number; tasks: SwipeTaskPair[] }> = spTasks.map((t) => ({
+        personId: t.id,
+        personName: "Pair",
+        faceCount: 1,
+        tasks: [
+          {
+            taskId: t.id,
+            faceId: t.face_a_id,
+            boundingBox: t.face_a.bounding_box,
+            photoId: t.face_a.photo_id,
+            thumbnailUrl: t.face_a.photos?.thumbnail_url ?? null,
+            fileName: t.face_a.photos?.file_name ?? null,
+            googleDriveFileId: t.face_a.photos?.google_drive_file_id,
+            bestDistance: t.best_distance,
+            width: t.face_a.photos?.width ?? null,
+            height: t.face_a.photos?.height ?? null,
+            pairFaceId: t.face_b.id,
+            pairBoundingBox: t.face_b.bounding_box,
+            pairThumbnailUrl: t.face_b.photos?.thumbnail_url ?? null,
+          },
+        ],
+      }));
+      return NextResponse.json({ people });
+    }
+
+    // face_name: Group tasks by person_id
     const tasks = (data ?? []) as Array<{
       id: string;
       face_a_id: string;

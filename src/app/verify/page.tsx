@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Nav } from "@/components/nav";
 import { FaceCrop } from "@/components/face-crop";
 import type { FaceItem } from "@/lib/types";
-import Link from "next/link";
 
 type VerifTask = {
   id: string;
@@ -34,14 +36,20 @@ function toFaceItem(face: NonNullable<VerifTask["face_a"]>): FaceItem {
 export default function VerifyPage() {
   const [tasks, setTasks] = useState<VerifTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [kind, setKind] = useState<"same_person" | "face_name">("face_name");
 
   const load = async () => {
     setLoading(true);
+    setError(null);
     try {
       const r = await fetch(`/api/verification/tasks?status=pending&kind=${kind}&limit=20`);
       const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "failed to load");
       setTasks(j.tasks ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setLoading(false);
     }
@@ -52,21 +60,46 @@ export default function VerifyPage() {
   }, [kind]);
 
   const decide = async (id: string, decision: "yes" | "no") => {
-    await fetch(`/api/verification/tasks/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision }),
-    });
-    await load();
+    try {
+      const r = await fetch(`/api/verification/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "save failed");
+      toast.success(decision === "yes" ? "Confirmed" : "Rejected");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
   };
 
   const generate = async () => {
-    await fetch("/api/verification/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ faceNameLimit: 20, samePersonLimit: 20 }),
-    });
-    await load();
+    setGenerating(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/verification/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ faceNameLimit: 20, samePersonLimit: 20 }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error ?? "generate failed");
+      const fn = j.createdFaceName ?? 0;
+      const sp = j.createdSamePerson ?? 0;
+      if (fn === 0 && sp === 0) {
+        toast("No new tasks — need Unknown faces + at least one named person, or run Library → Continue identification first");
+      } else {
+        toast.success(`Generated ${fn} face_name + ${sp} same_person tasks`);
+      }
+      await load();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Generate failed";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
@@ -98,16 +131,18 @@ export default function VerifyPage() {
             <Button asChild variant="outline" size="sm">
               <Link href="/verify/swipe">Swipe Validation</Link>
             </Button>
-            <Button variant="outline" onClick={generate} size="sm">
-              Generate tasks
+            <Button variant="outline" onClick={generate} size="sm" disabled={generating || loading}>
+              {generating ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
+              {generating ? "Generating…" : "Generate tasks"}
             </Button>
           </div>
         </div>
         <p className="mb-4 text-sm text-muted-foreground">
           {kind === "face_name"
-            ? "Is this face really this person? Uses glintr100 512d (0.30 threshold)."
+            ? "Is this face really this person? Uses w600k_mbf 512d (0.30 threshold)."
             : "Are these two photos the same person?"}
         </p>
+        {error && <p className="mb-3 rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
         {loading ? (
           <p className="text-sm">Loading...</p>
         ) : tasks.length === 0 ? (

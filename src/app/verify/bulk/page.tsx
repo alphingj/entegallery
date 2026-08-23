@@ -98,21 +98,26 @@ export default function BulkVerifyPage() {
   };
 
   const runGenerate = async () => {
+    // Bulk groups are live from Unknown faces — no verification_tasks needed.
+    // Generate here just refreshes groups and also warms verification tasks for Swipe/Verify.
     setLoading(true);
     try {
-      const res = await fetch("/api/verification/generate", {
+      const gen = await fetch("/api/verification/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ faceNameLimit: 50, samePersonLimit: 30 }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? "generate failed");
-      toast.success(`Generated ${j.createdFaceName ?? 0} + ${j.createdSamePerson ?? 0} tasks`);
+      })
+        .then((r) => r.json().catch(() => ({})))
+        .catch(() => ({}));
       await load();
+      if (gen?.createdFaceName !== undefined) {
+        toast.success(`Refreshed · ${groups.length} groups · +${gen.createdFaceName ?? 0} verification tasks`);
+      } else {
+        toast.success("Refreshed");
+      }
     } catch (err) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : "Failed to generate");
-    } finally {
       setLoading(false);
     }
   };
