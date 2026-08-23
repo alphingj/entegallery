@@ -242,10 +242,10 @@ export default function BulkVerifyPage() {
     }
   };
 
-  const handleSkip = async (group: typeof groups[0]) => {
+const handleSkip = async (group: typeof groups[0]) => {
     const decisions = group.faces.map(face => ({
       faceId: face.faceId,
-      decision: "skip" as const
+      decision: "skip" as const,
     }));
 
     try {
@@ -261,6 +261,23 @@ export default function BulkVerifyPage() {
     }
   };
 
+  const runGenerate = async () => {
+    setLoading(true);
+    try {
+      await fetch("/api/verification/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ faceNameLimit: 50, samePersonLimit: 30 }),
+      });
+      await load();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate tasks");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       <Nav active="verify" />
@@ -271,6 +288,9 @@ export default function BulkVerifyPage() {
             <span className="text-sm text-muted-foreground">
               {groups.reduce((sum, g) => sum + g.faceCount, 0)} faces in {groups.length} group{groups.length !== 1 ? "s" : ""}
             </span>
+            <Button onClick={runGenerate} disabled={loading} variant="outline" size="sm">
+              Generate
+            </Button>
             <Button onClick={load} disabled={loading} variant="outline" size="sm">
               Refresh
             </Button>
@@ -289,9 +309,14 @@ export default function BulkVerifyPage() {
             <p className="text-sm text-muted-foreground max-w-sm">
               All faces have been identified or there are no new faces to process.
             </p>
-            <button onClick={load} className="mt-4 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm">
-              Refresh
-            </button>
+            <div className="flex gap-2 mt-4">
+              <Button onClick={runGenerate} disabled={loading} size="sm">
+                Generate
+              </Button>
+              <Button onClick={load} disabled={loading} variant="outline" size="sm">
+                Refresh
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
