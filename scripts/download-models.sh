@@ -42,8 +42,59 @@ else
   echo "--- w600k_mbf already exists"
 fi
 
-# Optional: glintr100 (250MB) — uncomment if you want best accuracy and can host it
-# curl -fsSL "https://huggingface.co/deepinsight/insightface/resolve/main/models/antelopev2/glintr100.onnx" -o "$INSIGHT_DIR/glintr100.onnx"
+# glintr100 (250MB, antelopev2, ResNet100, max precision — 200MB+ model)
+# This is the max-accuracy 512d recogniser used by local-runner-py and Android.
+# Falls back to GitHub release if HuggingFace throttles.
+if [ ! -f "$INSIGHT_DIR/glintr100.onnx" ] || [ "${FORCE_GLINTR:-0}" = "1" ]; then
+  echo "--- glintr100 (antelopev2, 250MB, max precision)"
+  if ! curl -fsSL --retry 3 "https://huggingface.co/deepinsight/insightface/resolve/main/models/antelopev2/glintr100.onnx" -o "$INSIGHT_DIR/glintr100.onnx.tmp"; then
+    echo "HuggingFace failed, trying GitHub release..."
+    curl -fsSL "https://github.com/deepinsight/insightface/releases/download/v0.7/antelopev2.zip" -o /tmp/antelopev2.zip
+    if command -v unzip >/dev/null 2>&1; then
+      unzip -j /tmp/antelopev2.zip "glintr100.onnx" -d "$INSIGHT_DIR"
+    else
+      python3 -c "import zipfile; z=zipfile.ZipFile('/tmp/antelopev2.zip'); z.extract('glintr100.onnx', '$INSIGHT_DIR')"
+    fi
+    rm -f /tmp/antelopev2.zip
+  else
+    mv "$INSIGHT_DIR/glintr100.onnx.tmp" "$INSIGHT_DIR/glintr100.onnx"
+  fi
+  # verify size > 100MB (catch HTML error pages)
+  if [ -f "$INSIGHT_DIR/glintr100.onnx" ]; then
+    SZ=$(stat -c%s "$INSIGHT_DIR/glintr100.onnx" 2>/dev/null || stat -f%z "$INSIGHT_DIR/glintr100.onnx" 2>/dev/null || echo 0)
+    if [ "$SZ" -lt 100000000 ]; then
+      echo "WARNING: glintr100.onnx suspiciously small ($SZ bytes) — likely a 404 HTML page. Removing."
+      rm -f "$INSIGHT_DIR/glintr100.onnx"
+    else
+      echo "glintr100 OK: $(numfmt --to=iec-i --suffix=B $SZ 2>/dev/null || echo "$SZ bytes")"
+    fi
+  fi
+else
+  echo "--- glintr100 already exists ($(du -h "$INSIGHT_DIR/glintr100.onnx" | cut -f1))"
+fi
+
+# SCRFD 500M detector (205MB, 5-point landmarks) — replaces ssd_mobilenetv1 for max precision
+if [ ! -f "$INSIGHT_DIR/det_500m.onnx" ] || [ "${FORCE_DET:-0}" = "1" ]; then
+  echo "--- det_500m (SCRFD 500M, 205MB)"
+  if ! curl -fsSL --retry 3 "https://huggingface.co/deepinsight/insightface/resolve/main/models/buffalo_l/det_10g.onnx" -o "$INSIGHT_DIR/det_500m.onnx.tmp"; then
+    echo "Primary det_500m fetch failed, trying scrfd_500m_bnkps..."
+    curl -fsSL "https://huggingface.co/deepinsight/insightface/resolve/main/models/buffalo_l/scrfd_500m_bnkps_shape640x640.onnx" -o "$INSIGHT_DIR/det_500m.onnx.tmp" || true
+  fi
+  if [ -f "$INSIGHT_DIR/det_500m.onnx.tmp" ]; then
+    mv "$INSIGHT_DIR/det_500m.onnx.tmp" "$INSIGHT_DIR/det_500m.onnx"
+    SZ=$(stat -c%s "$INSIGHT_DIR/det_500m.onnx" 2>/dev/null || stat -f%z "$INSIGHT_DIR/det_500m.onnx" 2>/dev/null || echo 0)
+    if [ "$SZ" -lt 1000000 ]; then
+      echo "WARNING: det_500m.onnx too small ($SZ) — removing"
+      rm -f "$INSIGHT_DIR/det_500m.onnx"
+    else
+      echo "det_500m OK: $(numfmt --to=iec-i --suffix=B $SZ 2>/dev/null || echo "$SZ bytes") (SCRFD 2.5MB is normal for 10g/500m)"
+    fi
+  fi
+else
+  echo "--- det_500m already exists ($(du -h "$INSIGHT_DIR/det_500m.onnx" | cut -f1 2>/dev/null || echo "?"))"
+fi
+
+# Keep legacy w600k_mbf as fallback (13MB) — already handled above
 
 echo ""
 echo "Downloaded:"

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp">
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Ente Gallery — Android Re-embedder"
+        android:textSize="20sp"
+        android:textStyle="bold"/>
+    <TextView
+        android:id="@+id/modelStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="models: checking..."
+        android:textSize="12sp"/>
+    <Button
+        android:id="@+id/btnDownloadModels"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="How to get models"/>
+    <Button
+        android:id="@+id/btnScan"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="Scan PENDING (resume)"/>
+    <Button
+        android:id="@+id/btnScanAll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Scan ALL (full re-embed)"/>
+    <TextView
+        android:id="@+id/progress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text=""/>
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="Threshold 0.28 margin 0.06 floor 0.20 (glintr100). See local.properties for tuning. Bulk via Kali Python is faster — Android is for on-device / field use."
+        android:textSize="11sp"
+        android:alpha="0.7"/>
+</LinearLayout>

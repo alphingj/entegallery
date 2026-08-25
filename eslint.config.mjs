@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "supabase/functions/**",
+    "local-runner-py/**",
+    "android/**",
   ]),
 ]);
 

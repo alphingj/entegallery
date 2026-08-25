@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+models/*.onnx
+models/*.bin
+models/*.zip
+.env
+.env.local
+*.log
+.mypy_cache/
